@@ -6,7 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CompanySettings\UpdateCompanySettingsRequest;
 use App\Http\Transformers\CompanySettingsTransformer;
 use App\Models\Priority;
+use App\Models\Setting;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Log;
 use Settings;
 
 class CompanySettingsController extends Controller
@@ -42,6 +46,8 @@ class CompanySettingsController extends Controller
      * @apiSuccess {Integer}  screenshots_state               The current state of screenshot monitoring.
      * @apiSuccess {Integer}  env_screenshots_state           The environmental screenshot state.
      * @apiSuccess {Integer}  default_priority_id             The default priority ID.
+     * @apiSuccess {String}   slack_channel_id                The Slack channel ID tracking notifications are sent to, if configured.
+     * @apiSuccess {Boolean}  slack_configured                Whether a usable Slack bot token and channel are configured. The token itself is never returned.
      * @apiSuccessExample {json} Response Example
      *  HTTP/1.1 200 OK
      *  {
@@ -93,13 +99,38 @@ class CompanySettingsController extends Controller
      */
     public function index(): JsonResponse
     {
+        $settings = Settings::scope('core')->all();
+
         return responder()->success(
             array_merge(
-                Settings::scope('core')->all(),
-                ['internal_priorities' => Priority::all()]
+                $settings,
+                [
+                    'internal_priorities' => Priority::all(),
+                    'slack_configured' => $this->isSlackConfigured($settings),
+                ]
             ),
             new CompanySettingsTransformer
         )->respond();
+    }
+
+    /**
+     * Whether a usable Slack bot token and channel are configured. Never exposes the token itself.
+     */
+    private function isSlackConfigured(array $settings): bool
+    {
+        if (empty($settings['slack_bot_token']) || empty($settings['slack_channel_id'])) {
+            return false;
+        }
+
+        try {
+            Crypt::decryptString($settings['slack_bot_token']);
+        } catch (DecryptException $e) {
+            Log::warning('Failed to decrypt Slack bot token setting', ['exception' => $e->getMessage()]);
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -131,6 +162,8 @@ class CompanySettingsController extends Controller
      * @apiParam {Integer}  screenshots_state               The current state of screenshot monitoring.
      * @apiParam {Integer}  env_screenshots_state           The environmental screenshot state.
      * @apiParam {Integer}  default_priority_id             The default priority ID.
+     * @apiParam {String}   [slack_bot_token]               Slack bot token (`xoxb-...`). Omit to keep the current value, send `null`/empty to remove it. Write-only, never returned by GET.
+     * @apiParam {String}   [slack_channel_id]               Slack channel ID to send tracking notifications to. Omit to keep the current value, send `null`/empty to remove it.
      *
      * @apiParamExample {json} Request Example
      * { "timezone" : "Europe/Moscow",
@@ -185,9 +218,49 @@ class CompanySettingsController extends Controller
      */
     public function update(UpdateCompanySettingsRequest $request): JsonResponse
     {
-        Settings::scope('core')->set($request->validated());
+        $validated = $request->validated();
+
+        if (array_key_exists('slack_bot_token', $validated)) {
+            $this->setOrForgetSetting(
+                'slack_bot_token',
+                $validated['slack_bot_token'] !== null && $validated['slack_bot_token'] !== ''
+                    ? Crypt::encryptString($validated['slack_bot_token'])
+                    : null,
+            );
+            unset($validated['slack_bot_token']);
+        }
+
+        if (array_key_exists('slack_channel_id', $validated)) {
+            $this->setOrForgetSetting(
+                'slack_channel_id',
+                $validated['slack_channel_id'] !== null && $validated['slack_channel_id'] !== ''
+                    ? $validated['slack_channel_id']
+                    : null,
+            );
+            unset($validated['slack_channel_id']);
+        }
+
+        if ($validated !== []) {
+            Settings::scope('core')->set($validated);
+        }
 
         return responder()->success()->respond(204);
+    }
+
+    /**
+     * Sets a core setting, or deletes it outright when the value is null (settings.value is NOT NULL,
+     * so "clear" means removing the row rather than storing an empty value).
+     */
+    private function setOrForgetSetting(string $key, ?string $value): void
+    {
+        if ($value === null) {
+            Setting::where(['module_name' => 'core', 'key' => $key])->delete();
+            Settings::scope('core')->flush();
+
+            return;
+        }
+
+        Settings::scope('core')->set($key, $value);
     }
     /**
      * @api             {get} /offline-sync/public-key Get Offline Sync Public Key

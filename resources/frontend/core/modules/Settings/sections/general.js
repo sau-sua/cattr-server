@@ -6,6 +6,7 @@ import PrioritySelect from '@/components/PrioritySelect';
 import ScreenshotsStateSelect from '@/components/ScreenshotsStateSelect';
 import { store } from '@/store';
 import { hasRole } from '@/utils/user';
+import i18n from '@/i18n';
 
 export default {
     // Check if this section can be rendered and accessed, this param IS OPTIONAL (true by default)
@@ -193,6 +194,40 @@ export default {
                                 },
                             },
                         });
+                    },
+                },
+                {
+                    label: 'settings.slack_bot_token',
+                    key: 'slack_bot_token',
+                    tooltipValue: 'tooltip.slack_bot_token',
+                    render: (h, props) => {
+                        const placeholder = props.values.slack_configured
+                            ? i18n.t('settings.slack_bot_token_configured')
+                            : i18n.t('settings.slack_bot_token_not_configured');
+
+                        return h('at-input', {
+                            props: {
+                                value: props.currentValue || '',
+                                type: 'password',
+                                placeholder,
+                            },
+                            on: {
+                                // Leaving this untouched omits it from the save payload (current token
+                                // kept server-side); clearing it after typing sends '' to remove it.
+                                input(value) {
+                                    props.inputHandler(value);
+                                },
+                            },
+                        });
+                    },
+                },
+                {
+                    label: 'settings.slack_channel_id',
+                    key: 'slack_channel_id',
+                    tooltipValue: 'tooltip.slack_channel_id',
+                    fieldOptions: {
+                        type: 'text',
+                        placeholder: 'settings.slack_channel_id',
                     },
                 },
             ],

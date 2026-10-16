@@ -179,7 +179,11 @@
     "general": "General",
     "language": "Language",
     "company": "Company",
-    "company_timezone": "Company timezone"
+    "company_timezone": "Company timezone",
+    "slack_bot_token": "Slack bot token",
+    "slack_bot_token_configured": "Configured (leave blank to keep)",
+    "slack_bot_token_not_configured": "Not configured",
+    "slack_channel_id": "Slack channel ID"
   },
   "control": {
     "save": "Save",
@@ -347,6 +351,8 @@
     "s": "s"
   },
   "tooltip": {
+    "slack_bot_token": "Bot User OAuth Token (starts with xoxb-) from your Slack App's OAuth & Permissions page",
+    "slack_channel_id": "Channel ID from the channel's details in Slack. Remember to /invite the bot to this channel",
     "task_important": "Related screenshots should not be deleted automatically",
     "user_change_password": "Makes the password change on the first login mandatory",
     "user_manual_time": "Allow users to manually add time",

@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\TaskCommentController;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\StatusController;
 use App\Http\Controllers\Api\TaskActivityController;
+use App\Http\Controllers\Api\TrackingEventController;
 use Illuminate\Routing\Router;
 
 // Routes for login/register processing
@@ -302,6 +303,10 @@ Route::group([
             ->name('settings.list');
         $router->patch('company-settings', [CompanySettingsController::class, 'update'])
             ->name('settings.save');
+
+        // Tracking events routes
+        $router->post('tracking/events', [TrackingEventController::class, 'store'])
+            ->name('tracking.events.store');
 
         // Attachments routes
         $router->post('attachment', [AttachmentController::class, 'create'])

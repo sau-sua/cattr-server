@@ -5,6 +5,7 @@ namespace App\Http\Requests\CompanySettings;
 use App\Enums\Role;
 use App\Enums\ScreenshotsState;
 use App\Http\Requests\CattrFormRequest;
+use Closure;
 use Illuminate\Validation\Rules\Enum;
 
 class UpdateCompanySettingsRequest extends CattrFormRequest
@@ -23,6 +24,17 @@ class UpdateCompanySettingsRequest extends CattrFormRequest
             'screenshots_state' => ['sometimes', 'required', new Enum(ScreenshotsState::class)],
             'language' => 'sometimes|string',
             'default_priority_id' => 'sometimes|int',
+            'slack_bot_token' => [
+                'sometimes',
+                'nullable',
+                'string',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if ($value !== null && $value !== '' && !str_starts_with($value, 'xoxb-')) {
+                        $fail('The :attribute must be a valid Slack bot token (starting with xoxb-).');
+                    }
+                },
+            ],
+            'slack_channel_id' => 'sometimes|nullable|string',
         ];
     }
 }

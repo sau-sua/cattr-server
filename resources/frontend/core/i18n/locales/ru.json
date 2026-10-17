@@ -178,7 +178,11 @@
     "general": "Общее",
     "language": "Язык",
     "company": "Компания",
-    "company_timezone": "Часовой пояс компании"
+    "company_timezone": "Часовой пояс компании",
+    "slack_bot_token": "Токен Slack-бота",
+    "slack_bot_token_configured": "Настроено (оставьте пустым, чтобы не менять)",
+    "slack_bot_token_not_configured": "Не настроено",
+    "slack_channel_id": "ID канала Slack"
   },
   "control": {
     "save": "Сохранить",
@@ -346,6 +350,8 @@
     "s": "с"
   },
   "tooltip": {
+    "slack_bot_token": "Bot User OAuth Token (начинается с xoxb-) со страницы OAuth & Permissions вашего Slack-приложения",
+    "slack_channel_id": "ID канала из информации о канале в Slack. Не забудьте выполнить /invite для бота в этот канал",
     "task_important": "Соответствующие скриншоты не будут удаляться автоматически",
     "user_change_password": "Обязать пользователя сменить пароль при входе",
     "user_manual_time": "Дать возможность пользователю добавлять время вручную",

@@ -35,6 +35,9 @@ class UpdateCompanySettingsRequest extends CattrFormRequest
                 },
             ],
             'slack_channel_id' => 'sometimes|nullable|string',
+            'slack_user_mentions' => 'sometimes|nullable|array',
+            'slack_user_mentions.*.email' => 'required|email',
+            'slack_user_mentions.*.slack_user_id' => ['required', 'regex:/^U[A-Z0-9]+$/'],
         ];
     }
 }

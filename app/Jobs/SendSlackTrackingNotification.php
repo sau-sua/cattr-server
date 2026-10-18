@@ -78,19 +78,23 @@ class SendSlackTrackingNotification implements ShouldQueue
 
     private function buildLines(string $mention): array
     {
+        // Matches the agreed Hubstaff-style format: "stopped" (including the stopped half of
+        // a switch) never mentions project/task, only "started" does.
         if ($this->action === TrackingEventAction::Switched) {
             return array_filter([
-                $this->formatLine($mention, 'stopped', $this->previousTaskId),
-                $this->formatLine($mention, 'started', $this->taskId),
+                $this->stoppedLine($mention, $this->previousTaskId),
+                $this->startedLine($mention, $this->taskId),
             ]);
         }
 
-        return array_filter([
-            $this->formatLine($mention, $this->action->value, $this->taskId),
-        ]);
+        if ($this->action === TrackingEventAction::Started) {
+            return array_filter([$this->startedLine($mention, $this->taskId)]);
+        }
+
+        return array_filter([$this->stoppedLine($mention, $this->taskId)]);
     }
 
-    private function formatLine(string $mention, string $verb, ?int $taskId): ?string
+    private function startedLine(string $mention, ?int $taskId): ?string
     {
         $task = $taskId ? Task::with('project')->find($taskId) : null;
 
@@ -98,17 +102,61 @@ class SendSlackTrackingNotification implements ShouldQueue
             return null;
         }
 
-        $project = $this->escapeMrkdwn($task->project->name);
-        $taskName = $this->escapeMrkdwn($task->task_name);
+        return "{$mention} started working on " . $this->projectTaskLink($task);
+    }
 
-        return "{$mention} {$verb} working on {$project} / {$taskName}";
+    private function stoppedLine(string $mention, ?int $taskId): ?string
+    {
+        if (!$taskId || !Task::whereKey($taskId)->exists()) {
+            return null;
+        }
+
+        return "{$mention} stopped working";
+    }
+
+    /**
+     * Builds a `<url|label>` Slack mrkdwn link to the task's project board. The label is
+     * escaped before being wrapped so the `<...|...>` link syntax itself is never escaped.
+     */
+    private function projectTaskLink(Task $task): string
+    {
+        $label = $this->escapeMrkdwn($task->project->name) . ' / ' . $this->escapeMrkdwn($task->task_name);
+
+        $frontendUrl = rtrim((string)config('app.frontend_url'), '/');
+
+        if ($frontendUrl === '') {
+            return $label;
+        }
+
+        return "<{$frontendUrl}/projects/{$task->project_id}/tasks/kanban|{$label}>";
     }
 
     private function mentionFor(User $user, string $token): string
     {
-        $slackUserId = $this->lookupSlackUserId($user->email, $token);
+        $slackUserId = $this->overrideSlackUserId($user->email) ?? $this->lookupSlackUserId($user->email, $token);
 
         return $slackUserId ? "<@{$slackUserId}>" : '*' . $this->escapeMrkdwn($user->full_name) . '*';
+    }
+
+    /**
+     * Manually configured email -> Slack user ID overrides (Company Settings), checked before
+     * falling back to the `users.lookupByEmail` API — some workspaces don't match Cattr/Slack
+     * emails, so admins can map them by hand.
+     */
+    private function overrideSlackUserId(string $email): ?string
+    {
+        $overrides = json_decode(Settings::scope('core')->get('slack_user_mentions') ?? '', true) ?: [];
+
+        foreach ($overrides as $override) {
+            if (
+                isset($override['email'], $override['slack_user_id'])
+                && strcasecmp($override['email'], $email) === 0
+            ) {
+                return $override['slack_user_id'];
+            }
+        }
+
+        return null;
     }
 
     private function lookupSlackUserId(string $email, string $token): ?string

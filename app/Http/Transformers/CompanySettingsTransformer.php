@@ -28,6 +28,7 @@ class CompanySettingsTransformer extends Transformer
             'default_priority_id' => (int)($input['default_priority_id'] ?? 2),
             'slack_channel_id' => $input['slack_channel_id'] ?? null,
             'slack_configured' => (bool)($input['slack_configured'] ?? false),
+            'slack_user_mentions' => $input['slack_user_mentions'] ?? [],
         ]);
     }
 }

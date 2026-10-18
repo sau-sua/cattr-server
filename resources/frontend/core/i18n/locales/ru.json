@@ -182,7 +182,8 @@
     "slack_bot_token": "Токен Slack-бота",
     "slack_bot_token_configured": "Настроено (оставьте пустым, чтобы не менять)",
     "slack_bot_token_not_configured": "Не настроено",
-    "slack_channel_id": "ID канала Slack"
+    "slack_channel_id": "ID канала Slack",
+    "slack_user_mentions": "Ручное сопоставление Slack-упоминаний"
   },
   "control": {
     "save": "Сохранить",
@@ -352,6 +353,7 @@
   "tooltip": {
     "slack_bot_token": "Bot User OAuth Token (начинается с xoxb-) со страницы OAuth & Permissions вашего Slack-приложения",
     "slack_channel_id": "ID канала из информации о канале в Slack. Не забудьте выполнить /invite для бота в этот канал",
+    "slack_user_mentions": "Сопоставьте email Cattr с ID пользователя Slack вручную, если автоматический поиск по email не находит совпадение (например, разные email в Slack)",
     "task_important": "Соответствующие скриншоты не будут удаляться автоматически",
     "user_change_password": "Обязать пользователя сменить пароль при входе",
     "user_manual_time": "Дать возможность пользователю добавлять время вручную",

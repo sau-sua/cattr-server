@@ -2,6 +2,7 @@ import LanguageSelector from '@/components/LanguageSelector';
 import TimezonePicker from '@/components/TimezonePicker';
 import CompanyService from '../services/company.service';
 import ColorSelect from '../components/ColorSelect';
+import SlackMentionOverrides from '../components/SlackMentionOverrides';
 import PrioritySelect from '@/components/PrioritySelect';
 import ScreenshotsStateSelect from '@/components/ScreenshotsStateSelect';
 import { store } from '@/store';
@@ -228,6 +229,23 @@ export default {
                     fieldOptions: {
                         type: 'text',
                         placeholder: 'settings.slack_channel_id',
+                    },
+                },
+                {
+                    label: 'settings.slack_user_mentions',
+                    key: 'slack_user_mentions',
+                    tooltipValue: 'tooltip.slack_user_mentions',
+                    render: (h, props) => {
+                        return h(SlackMentionOverrides, {
+                            props: {
+                                rows: props.values.slack_user_mentions ?? [],
+                            },
+                            on: {
+                                input(rows) {
+                                    props.inputHandler(rows);
+                                },
+                            },
+                        });
                     },
                 },
             ],

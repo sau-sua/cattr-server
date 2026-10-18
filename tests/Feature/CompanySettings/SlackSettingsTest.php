@@ -150,4 +150,84 @@ class SlackSettingsTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('data.slack_configured', false);
     }
+
+    public function test_admin_can_set_slack_user_mentions(): void
+    {
+        Sanctum::actingAs($this->admin, ['*']);
+
+        $response = $this->patchJson(self::URI, [
+            'slack_user_mentions' => [
+                ['email' => 'quyen@example.com', 'slack_user_id' => 'U0123ABCD'],
+            ],
+        ]);
+
+        $response->assertNoContent();
+
+        $stored = Setting::where(['module_name' => 'core', 'key' => 'slack_user_mentions'])->first();
+        $this->assertNotNull($stored);
+        $this->assertSame(
+            [['email' => 'quyen@example.com', 'slack_user_id' => 'U0123ABCD']],
+            json_decode($stored->value, true),
+        );
+
+        $index = $this->getJson(self::URI);
+        $index->assertJsonPath('data.slack_user_mentions.0.email', 'quyen@example.com');
+        $index->assertJsonPath('data.slack_user_mentions.0.slack_user_id', 'U0123ABCD');
+    }
+
+    public function test_slack_user_mentions_rejects_invalid_email(): void
+    {
+        Sanctum::actingAs($this->admin, ['*']);
+
+        $response = $this->patchJson(self::URI, [
+            'slack_user_mentions' => [
+                ['email' => 'not-an-email', 'slack_user_id' => 'U0123ABCD'],
+            ],
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertNull(Setting::where(['module_name' => 'core', 'key' => 'slack_user_mentions'])->first());
+    }
+
+    public function test_slack_user_mentions_rejects_invalid_slack_id_format(): void
+    {
+        Sanctum::actingAs($this->admin, ['*']);
+
+        $response = $this->patchJson(self::URI, [
+            'slack_user_mentions' => [
+                ['email' => 'quyen@example.com', 'slack_user_id' => 'not-a-slack-id'],
+            ],
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertNull(Setting::where(['module_name' => 'core', 'key' => 'slack_user_mentions'])->first());
+    }
+
+    public function test_empty_slack_user_mentions_clears_it(): void
+    {
+        Sanctum::actingAs($this->admin, ['*']);
+
+        $this->patchJson(self::URI, [
+            'slack_user_mentions' => [['email' => 'quyen@example.com', 'slack_user_id' => 'U0123ABCD']],
+        ])->assertNoContent();
+
+        $this->patchJson(self::URI, ['slack_user_mentions' => []])->assertNoContent();
+
+        $this->assertNull(Setting::where(['module_name' => 'core', 'key' => 'slack_user_mentions'])->first());
+
+        $index = $this->getJson(self::URI);
+        $index->assertJsonPath('data.slack_user_mentions', []);
+    }
+
+    public function test_user_cannot_set_slack_user_mentions(): void
+    {
+        Sanctum::actingAs($this->user, ['*']);
+
+        $response = $this->patchJson(self::URI, [
+            'slack_user_mentions' => [['email' => 'quyen@example.com', 'slack_user_id' => 'U0123ABCD']],
+        ]);
+
+        $response->assertStatus(403);
+        $this->assertNull(Setting::where(['module_name' => 'core', 'key' => 'slack_user_mentions'])->first());
+    }
 }

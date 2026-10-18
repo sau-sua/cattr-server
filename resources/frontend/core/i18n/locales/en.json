@@ -183,7 +183,8 @@
     "slack_bot_token": "Slack bot token",
     "slack_bot_token_configured": "Configured (leave blank to keep)",
     "slack_bot_token_not_configured": "Not configured",
-    "slack_channel_id": "Slack channel ID"
+    "slack_channel_id": "Slack channel ID",
+    "slack_user_mentions": "Slack mention overrides"
   },
   "control": {
     "save": "Save",
@@ -353,6 +354,7 @@
   "tooltip": {
     "slack_bot_token": "Bot User OAuth Token (starts with xoxb-) from your Slack App's OAuth & Permissions page",
     "slack_channel_id": "Channel ID from the channel's details in Slack. Remember to /invite the bot to this channel",
+    "slack_user_mentions": "Manually map a Cattr email to a Slack user ID when automatic lookup by email doesn't match (e.g. different Slack workspace email)",
     "task_important": "Related screenshots should not be deleted automatically",
     "user_change_password": "Makes the password change on the first login mandatory",
     "user_manual_time": "Allow users to manually add time",

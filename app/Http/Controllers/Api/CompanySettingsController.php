@@ -48,6 +48,9 @@ class CompanySettingsController extends Controller
      * @apiSuccess {Integer}  default_priority_id             The default priority ID.
      * @apiSuccess {String}   slack_channel_id                The Slack channel ID tracking notifications are sent to, if configured.
      * @apiSuccess {Boolean}  slack_configured                Whether a usable Slack bot token and channel are configured. The token itself is never returned.
+     * @apiSuccess {Array}    slack_user_mentions              Manual email-to-Slack-user-ID overrides, used before falling back to `users.lookupByEmail`.
+     * @apiSuccess {String}   slack_user_mentions.email        Cattr user email.
+     * @apiSuccess {String}   slack_user_mentions.slack_user_id  Slack user ID (e.g. `U0123ABCD`).
      * @apiSuccessExample {json} Response Example
      *  HTTP/1.1 200 OK
      *  {
@@ -107,6 +110,7 @@ class CompanySettingsController extends Controller
                 [
                     'internal_priorities' => Priority::all(),
                     'slack_configured' => $this->isSlackConfigured($settings),
+                    'slack_user_mentions' => json_decode($settings['slack_user_mentions'] ?? '', true) ?: [],
                 ]
             ),
             new CompanySettingsTransformer
@@ -164,6 +168,9 @@ class CompanySettingsController extends Controller
      * @apiParam {Integer}  default_priority_id             The default priority ID.
      * @apiParam {String}   [slack_bot_token]               Slack bot token (`xoxb-...`). Omit to keep the current value, send `null`/empty to remove it. Write-only, never returned by GET.
      * @apiParam {String}   [slack_channel_id]               Slack channel ID to send tracking notifications to. Omit to keep the current value, send `null`/empty to remove it.
+     * @apiParam {Array}    [slack_user_mentions]            Manual email-to-Slack-user-ID overrides. Omit to keep the current value, send `[]`/`null` to clear it.
+     * @apiParam {String}   slack_user_mentions.email        Cattr user email.
+     * @apiParam {String}   slack_user_mentions.slack_user_id  Slack user ID, must match `U[A-Z0-9]+`.
      *
      * @apiParamExample {json} Request Example
      * { "timezone" : "Europe/Moscow",
@@ -238,6 +245,14 @@ class CompanySettingsController extends Controller
                     : null,
             );
             unset($validated['slack_channel_id']);
+        }
+
+        if (array_key_exists('slack_user_mentions', $validated)) {
+            $this->setOrForgetSetting(
+                'slack_user_mentions',
+                !empty($validated['slack_user_mentions']) ? json_encode($validated['slack_user_mentions']) : null,
+            );
+            unset($validated['slack_user_mentions']);
         }
 
         if ($validated !== []) {

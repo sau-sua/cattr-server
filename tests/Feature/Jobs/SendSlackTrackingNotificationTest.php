@@ -54,7 +54,7 @@ class SendSlackTrackingNotificationTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_started_posts_message_with_mention(): void
+    public function test_started_posts_message_with_mention_and_project_task(): void
     {
         $this->configureSlack();
 
@@ -76,6 +76,21 @@ class SendSlackTrackingNotificationTest extends TestCase
         });
     }
 
+    public function test_stopped_message_has_no_project_or_task(): void
+    {
+        $this->configureSlack();
+
+        Http::fake([
+            'https://slack.com/api/users.lookupByEmail*' => Http::response(['ok' => true, 'user' => ['id' => 'U999']]),
+            'https://slack.com/api/chat.postMessage' => Http::response(['ok' => true]),
+        ]);
+
+        (new SendSlackTrackingNotification($this->user->id, TrackingEventAction::Stopped, $this->task->id))->handle();
+
+        Http::assertSent(fn($request) => $request->url() === 'https://slack.com/api/chat.postMessage'
+            && $request['text'] === '<@U999> stopped working');
+    }
+
     public function test_falls_back_to_bold_name_when_mention_not_found(): void
     {
         $this->configureSlack();
@@ -90,11 +105,45 @@ class SendSlackTrackingNotificationTest extends TestCase
 
         (new SendSlackTrackingNotification($this->user->id, TrackingEventAction::Stopped, $this->task->id))->handle();
 
-        Http::assertSent(function ($request) {
-            return $request->url() === 'https://slack.com/api/chat.postMessage'
-                && str_contains($request['text'], "*{$this->user->full_name}*")
-                && str_starts_with($request['text'], '*');
-        });
+        Http::assertSent(fn($request) => $request->url() === 'https://slack.com/api/chat.postMessage'
+            && $request['text'] === "*{$this->user->full_name}* stopped working");
+    }
+
+    public function test_manual_mention_override_takes_priority_over_lookup(): void
+    {
+        $this->configureSlack();
+        Settings::scope('core')->set('slack_user_mentions', json_encode([
+            ['email' => strtoupper($this->user->email), 'slack_user_id' => 'U777OVERRIDE'],
+        ]));
+
+        Http::fake([
+            'https://slack.com/api/chat.postMessage' => Http::response(['ok' => true]),
+        ]);
+
+        (new SendSlackTrackingNotification($this->user->id, TrackingEventAction::Stopped, $this->task->id))->handle();
+
+        Http::assertNotSent(fn($request) => $request->url() === 'https://slack.com/api/users.lookupByEmail');
+        Http::assertSent(fn($request) => $request->url() === 'https://slack.com/api/chat.postMessage'
+            && $request['text'] === '<@U777OVERRIDE> stopped working');
+    }
+
+    public function test_builds_project_task_link_when_frontend_url_configured(): void
+    {
+        $this->configureSlack();
+        config(['app.frontend_url' => 'https://cattr.example.com']);
+
+        Http::fake([
+            'https://slack.com/api/users.lookupByEmail*' => Http::response(['ok' => true, 'user' => ['id' => 'U999']]),
+            'https://slack.com/api/chat.postMessage' => Http::response(['ok' => true]),
+        ]);
+
+        (new SendSlackTrackingNotification($this->user->id, TrackingEventAction::Started, $this->task->id))->handle();
+
+        $expectedLabel = "{$this->task->project->name} / {$this->task->task_name}";
+        $expectedUrl = "https://cattr.example.com/projects/{$this->task->project_id}/tasks/kanban";
+
+        Http::assertSent(fn($request) => $request->url() === 'https://slack.com/api/chat.postMessage'
+            && $request['text'] === "<@U999> started working on <{$expectedUrl}|{$expectedLabel}>");
     }
 
     public function test_escapes_mrkdwn_in_task_name(): void
@@ -112,6 +161,30 @@ class SendSlackTrackingNotificationTest extends TestCase
 
         Http::assertSent(function ($request) {
             return $request->url() === 'https://slack.com/api/chat.postMessage'
+                && str_contains($request['text'], 'release &lt;!channel&gt; now')
+                && !str_contains($request['text'], '<!channel>');
+        });
+    }
+
+    public function test_escapes_mrkdwn_in_task_name_within_project_link(): void
+    {
+        $this->configureSlack();
+        config(['app.frontend_url' => 'https://cattr.example.com']);
+        $this->task->task_name = 'release <!channel> now';
+        $this->task->save();
+
+        Http::fake([
+            'https://slack.com/api/users.lookupByEmail*' => Http::response(['ok' => false, 'error' => 'users_not_found']),
+            'https://slack.com/api/chat.postMessage' => Http::response(['ok' => true]),
+        ]);
+
+        (new SendSlackTrackingNotification($this->user->id, TrackingEventAction::Started, $this->task->id))->handle();
+
+        Http::assertSent(function ($request) {
+            $expectedUrl = "https://cattr.example.com/projects/{$this->task->project_id}/tasks/kanban";
+
+            return $request->url() === 'https://slack.com/api/chat.postMessage'
+                && str_starts_with($request['text'], "*{$this->user->full_name}* started working on <{$expectedUrl}|")
                 && str_contains($request['text'], 'release &lt;!channel&gt; now')
                 && !str_contains($request['text'], '<!channel>');
         });
@@ -141,8 +214,7 @@ class SendSlackTrackingNotificationTest extends TestCase
         [$first] = $postMessageRequests[0];
         [$second] = $postMessageRequests[1];
 
-        $this->assertStringContainsString('stopped working on', $first['text']);
-        $this->assertStringContainsString($this->previousTask->task_name, $first['text']);
+        $this->assertSame("*{$this->user->full_name}* stopped working", $first['text']);
         $this->assertStringContainsString('started working on', $second['text']);
         $this->assertStringContainsString($this->task->task_name, $second['text']);
     }

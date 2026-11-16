@@ -103,6 +103,84 @@ provision_application() {
     php /opt/cattr/app/artisan cattr:make:admin --no-interaction
 }
 
+# Prints the memory available to this container in MB: the cgroup limit when
+# one is set (docker --memory, compose mem_limit, Kubernetes limits), capped
+# by the physical memory of the host. Prints nothing when it cannot be read.
+detect_memory_mb() {
+    host_kb=""
+    if [ -r /proc/meminfo ]; then
+        while read -r key value _; do
+            if [ "$key" = "MemTotal:" ]; then
+                host_kb="$value"
+                break
+            fi
+        done < /proc/meminfo
+    fi
+
+    limit_bytes=""
+    if [ -r /sys/fs/cgroup/memory.max ]; then
+        # cgroup v2; the literal "max" means unlimited.
+        limit_bytes="$(cat /sys/fs/cgroup/memory.max)"
+    elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+        # cgroup v1; unlimited is a huge number, filtered by the host cap below.
+        limit_bytes="$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes)"
+    fi
+
+    memory_mb=""
+    case "$host_kb" in
+        '' | *[!0-9]*) ;;
+        *) memory_mb="$((host_kb / 1024))" ;;
+    esac
+
+    case "$limit_bytes" in
+        '' | *[!0-9]*) ;;
+        *)
+            limit_mb="$((limit_bytes / 1024 / 1024))"
+            if [ -z "$memory_mb" ] || [ "$limit_mb" -lt "$memory_mb" ]; then
+                memory_mb="$limit_mb"
+            fi
+            ;;
+    esac
+
+    printf '%s' "$memory_mb"
+}
+
+# PHP's memory_limit applies to each PHP process separately, and one container
+# runs several of them (Octane workers, queue worker, scheduler runs). Giving
+# a single process 40% of the container leaves room for the others while a
+# heavy job is running. The result is clamped so that a tiny container still
+# gets a usable limit and a huge one does not get a pointless one.
+#
+# This is recalculated on every container start, so resizing the host or the
+# container limit is picked up by a restart. An explicit PHP_MEMORY_LIMIT
+# always wins.
+configure_php_memory_limit() {
+    if [ -n "${PHP_MEMORY_LIMIT:-}" ]; then
+        log "PHP memory limit: ${PHP_MEMORY_LIMIT} (from PHP_MEMORY_LIMIT)"
+        return 0
+    fi
+
+    memory_mb="$(detect_memory_mb)"
+
+    if [ -z "$memory_mb" ]; then
+        log "PHP memory limit: container memory unknown, using the php.ini fallback"
+        return 0
+    fi
+
+    limit_mb="$((memory_mb * 40 / 100))"
+
+    if [ "$limit_mb" -lt 128 ]; then
+        limit_mb=128
+    elif [ "$limit_mb" -gt 2048 ]; then
+        limit_mb=2048
+    fi
+
+    PHP_MEMORY_LIMIT="${limit_mb}M"
+    export PHP_MEMORY_LIMIT
+
+    log "PHP memory limit: ${PHP_MEMORY_LIMIT} (40% of ${memory_mb} MB available to the container)"
+}
+
 # CATTR_RESTART_POLICY:
 #   restart  - Pebble restarts crashed services in place (001-cattr.yaml).
 #   shutdown - a crashed queue/reverb/scheduler stops Pebble, so the container
@@ -143,6 +221,9 @@ log "Cattr container bootstrap starting"
 log "Identity: uid=$(id -u) gid=$(id -g) user=$(id -un 2>/dev/null || printf unknown)"
 log "Application root: /opt/cattr/app"
 log "Environment: APP_ENV=${APP_ENV:-<unset>} DB_CONNECTION=${DB_CONNECTION:-<unset>} DB_HOST=${DB_HOST:-<unset>} DB_DATABASE=${DB_DATABASE:-<unset>}"
+
+# Runs before the exec escape hatch so maintenance commands get the same limit.
+configure_php_memory_limit
 
 # Allow an explicit escape hatch for maintenance/debug commands without
 # teaching the entrypoint about every possible executable.

@@ -5,6 +5,16 @@ on:
     tags:
       - 'v*'
 
+  # Manual run from the Actions tab, for publishing an image without pushing
+  # a Git tag first. The given version is validated and used exactly like a
+  # tag name.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish as vMAJOR.MINOR.PATCH[-PRERELEASE] (for example v6.0.0)'
+        required: true
+        type: string
+
 # Write permissions are granted per job, only where images are published.
 permissions:
   contents: read
@@ -14,10 +24,15 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REGISTRY_NAMESPACE: ghcr.io/cattr-app
+  # Images are published to the GHCR namespace of whoever owns the repository
+  # running this workflow, so a fork publishes under its own account and never
+  # needs write access to another namespace. GHCR requires a lowercase
+  # namespace: replace the expression with a literal if the owner login
+  # contains uppercase characters.
+  REGISTRY_NAMESPACE: ghcr.io/${{ github.repository_owner }}
 
   APP_IMAGE: server
-  RUNTIME_IMAGE: ghcr.io/cattr-app/server-runtime
+  RUNTIME_IMAGE: ghcr.io/${{ github.repository_owner }}/server-runtime
 
   RUNTIME_CONFIG: build/base/runtime/apko.yaml
   BUILDER_CONFIG: build/base/builder/apko.yaml
@@ -37,7 +52,10 @@ env:
   #
   # org.opencontainers.image.* keys are OCI annotations. apko also mirrors
   # them into image config labels for compatibility with label-based tooling.
-  OCI_SOURCE: https://github.com/cattr-app/server-application
+  #
+  # The source points at the repository that built the image, which is also
+  # what links the published package to that repository on GitHub.
+  OCI_SOURCE: ${{ github.server_url }}/${{ github.repository }}
   OCI_VENDOR: Cattr
 
   SERVER_DESCRIPTION: >-
@@ -75,6 +93,9 @@ jobs:
 
       - name: Classify SemVer tag
         id: classify
+        env:
+          # Empty on tag pushes, where the script falls back to the pushed tag.
+          RELEASE_TAG: ${{ inputs.version }}
         run: bash scripts/release-tags.sh
 
   runtime-images:

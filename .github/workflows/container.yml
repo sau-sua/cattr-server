@@ -19,7 +19,7 @@ permissions: {}
 env:
   # Keep in sync with release.yml, they feed the base image content hash
   # (tests/ci/base-images.sh checks it).
-  RUNTIME_IMAGE: ghcr.io/cattr-app/server-runtime
+  RUNTIME_IMAGE: ghcr.io/${{ github.repository_owner }}/server-runtime
 
   RUNTIME_CONFIG: build/base/runtime/apko.yaml
   BUILDER_CONFIG: build/base/builder/apko.yaml
@@ -32,7 +32,7 @@ env:
 
   IMAGE_BUILD_REVISION: '7'
 
-  OCI_SOURCE: https://github.com/cattr-app/server-application
+  OCI_SOURCE: ${{ github.server_url }}/${{ github.repository }}
   OCI_VENDOR: Cattr
 
   RUNTIME_DESCRIPTION: >-

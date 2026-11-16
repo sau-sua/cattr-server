@@ -4,7 +4,9 @@ set -euo pipefail
 # OCI tags cannot contain SemVer build metadata ('+'), so accept only the
 # canonical version or prerelease forms that can be published unchanged.
 semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
-tag="${GITHUB_REF_NAME:-}"
+# RELEASE_TAG is the version typed into a manual workflow run, which has no
+# tag ref of its own. It goes through the same validation as a pushed tag.
+tag="${RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
 
 if [[ ! "${tag}" =~ ${semver} ]]; then
     echo "::error::Unsupported release tag: ${tag} (expected vMAJOR.MINOR.PATCH[-PRERELEASE], without build metadata)" >&2

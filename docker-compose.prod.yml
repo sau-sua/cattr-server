@@ -1,0 +1,108 @@
+# Production deployment from a prebuilt image.
+#
+# Unlike docker-compose.yml, nothing is built on the host: building the
+# frontend needs several GB of RAM, far more than running Cattr does. Build
+# and publish the image with the Release workflow, then pull it here.
+#
+#   cp .env.example .env    # set at least APP_KEY, DB_PASSWORD,
+#                           # REVERB_APP_SECRET and CATTR_IMAGE
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Sizing
+# ------
+# Every memory setting below is read from .env, and the defaults fit a host
+# with 1 CPU and 1 GB of RAM. After resizing the host, change the values in
+# .env and run `up -d` again; this file does not need to be edited.
+#
+#   Host RAM | APP_MEM_LIMIT | DB_MEM_LIMIT | DB_INNODB_BUFFER_POOL_SIZE
+#   ---------+---------------+--------------+---------------------------
+#   1 GB     | 560m          | 320m         | 128M
+#   2 GB     | 1100m         | 640m         | 384M
+#   4 GB     | 2400m         | 1200m        | 768M
+#   8 GB     | 4800m         | 2800m        | 2G
+#
+# The rule behind the table: leave about 150 MB to the OS and Docker, give the
+# database roughly a third of the rest and the application the remainder, and
+# keep the InnoDB buffer pool at 40-75% of DB_MEM_LIMIT (the lower end on
+# small hosts, where fixed overhead takes a larger share). The 1 GB row adds
+# up to slightly more than the host has: both limits are ceilings that are not
+# reached at the same time in normal use, and swap absorbs the overlap.
+#
+# Two things scale by themselves inside the application container and need no
+# setting: the number of Octane workers follows the CPU count of the host, and
+# PHP's memory_limit follows APP_MEM_LIMIT. See OCTANE_WORKERS and
+# PHP_MEMORY_LIMIT in .env.example to override them.
+#
+# On hosts with 2 GB of RAM or less, add swap (1-2 GB) so that a short spike
+# is slowed down instead of killed. No swap limit is set here on purpose:
+# Docker then lets a container swap up to the size of its memory limit, which
+# keeps following the limit when it is raised.
+
+x-logging: &logging
+  # Caddy writes an access log line per request to stdout. Without rotation
+  # the default json-file driver grows until the disk is full.
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  app:
+    image: ${CATTR_IMAGE:?Set CATTR_IMAGE in .env to the published server image}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - backend_storage:/opt/cattr/app/storage
+    env_file:
+      - .env
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    mem_limit: ${APP_MEM_LIMIT:-560m}
+    logging: *logging
+
+  db:
+    image: docker.io/library/percona:8.0
+    restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=cattr
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    command:
+      # The main consumer of database memory; see the sizing table above.
+      - --innodb-buffer-pool-size=${DB_INNODB_BUFFER_POOL_SIZE:-128M}
+      # Each connection reserves its own buffers. The application opens a few
+      # per Octane worker plus the queue and scheduler, so raise this together
+      # with the CPU count rather than with RAM.
+      - --max-connections=${DB_MAX_CONNECTIONS:-30}
+      # Performance Schema costs 100+ MB at default settings. Turn it ON when
+      # there is memory to spare and query diagnostics are wanted.
+      - --performance-schema=${DB_PERFORMANCE_SCHEMA:-OFF}
+      # Bypass the OS page cache for data files, which would otherwise hold a
+      # second copy of what the buffer pool already caches.
+      - --innodb-flush-method=O_DIRECT
+      # Small fixed caches; MySQL's defaults assume a dedicated server.
+      - --innodb-log-buffer-size=8M
+      - --table-open-cache=200
+      - --table-definition-cache=400
+      - --thread-cache-size=4
+      - --tmp-table-size=16M
+      - --max-heap-table-size=16M
+      - --key-buffer-size=8M
+      # The binary log is only needed for replication and point-in-time
+      # recovery. Remove this line before setting up either.
+      - --skip-log-bin
+    cap_add:
+      - SYS_NICE
+    volumes:
+      - database:/var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h localhost -u root --password="$$MYSQL_ROOT_PASSWORD"']
+      timeout: 20s
+      retries: 10
+    mem_limit: ${DB_MEM_LIMIT:-320m}
+    logging: *logging
+
+volumes:
+  backend_storage: {}
+  database: {}

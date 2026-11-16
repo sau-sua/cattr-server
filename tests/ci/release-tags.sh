@@ -49,6 +49,28 @@ check_valid v4.10.0 4.10.0 true true $'4.10.0\nlatest' $'v4.9.0\nv4.10.0'
 check_valid v4.1.0 4.1.0 true true $'4.1.0\nlatest' $'v4.1.0-rc.1\nv4.2.0-alpha.1\nv4.0.2'
 check_valid v4.1.0 4.1.0 true true $'4.1.0\nlatest'
 
+# A manual run passes the version as RELEASE_TAG while GITHUB_REF_NAME is the
+# branch it was started from: the input wins and is validated like a tag, and an
+# empty input (tag pushes) leaves the pushed tag in charge.
+check_release_tag() {
+    local release_tag="$1" ref_name="$2" expected_version="$3" output
+    output="$(mktemp)"
+    RELEASE_TAGS= RELEASE_TAG="${release_tag}" GITHUB_REF_NAME="${ref_name}" GITHUB_OUTPUT="${output}" bash "${script}" > /dev/null
+    [[ "$(sed -n 's/^version=//p' "${output}")" == "${expected_version}" ]] || { echo "Wrong version for RELEASE_TAG=${release_tag}" >&2; exit 1; }
+    rm -f "${output}"
+}
+
+check_release_tag v4.2.0 main 4.2.0
+check_release_tag '' v4.1.0 4.1.0
+
+manual_output="$(mktemp)"
+if RELEASE_TAGS= RELEASE_TAG=main GITHUB_REF_NAME=v4.1.0 GITHUB_OUTPUT="${manual_output}" bash "${script}" >/dev/null 2>&1; then
+    echo 'Invalid RELEASE_TAG was ignored in favour of the ref name' >&2
+    exit 1
+fi
+[[ ! -s "${manual_output}" ]] || { echo 'Invalid RELEASE_TAG produced outputs' >&2; exit 1; }
+rm -f "${manual_output}"
+
 # Without RELEASE_TAGS the script reads the tags of the current repository. Use a
 # throwaway repository with tag refs pointing at the empty tree (no commit or tag
 # object, so no signing is involved) and an isolated Git config, and verify that a

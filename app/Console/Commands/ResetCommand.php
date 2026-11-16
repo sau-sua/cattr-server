@@ -2,11 +2,14 @@
 
 namespace App\Console\Commands;
 
+use App\Contracts\ScreenshotService;
 use Exception;
 use Illuminate\Console\Command;
 use DB;
 use Illuminate\Database\Console\Seeds\SeedCommand;
-use Nwidart\Modules\Commands\SeedCommand as ModuleSeedCommand;
+use Nwidart\Modules\Commands\Database\SeedCommand as ModuleSeedCommand;
+use Nwidart\Modules\Facades\Module;
+use Illuminate\Support\Facades\Schema;
 use Settings;
 use Storage;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -43,7 +46,7 @@ class ResetCommand extends Command
 
         DB::statement('SET FOREIGN_KEY_CHECKS=0;');
 
-        $tables = DB::connection()->getDoctrineSchemaManager()->listTableNames();
+        $tables = Schema::getTableListing(DB::connection()->getDatabaseName(), false);
         foreach ($tables as $table) {
             if (!in_array($table, $this->protectedTables, true)) {
                 DB::table($table)->truncate();
@@ -53,7 +56,11 @@ class ResetCommand extends Command
         DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
         if ($this->option('images')) {
-            Storage::deleteDirectory('uploads/screenshots');
+            // Files rather than the directory: keeps dotfiles such as the .gitignore of a source checkout
+            Storage::delete(array_filter(
+                Storage::allFiles(ScreenshotService::PARENT_FOLDER),
+                static fn (string $path) => !str_starts_with(basename($path), '.'),
+            ));
         }
 
         $this->call(SeedCommand::class, [
@@ -65,8 +72,12 @@ class ResetCommand extends Command
             $this->call(SeedCommand::class, [
                 '--force' => true
             ]);
+            // module:seed (nwidart/laravel-modules 13) seeds only the modules passed as arguments
+            // and prompts for them when the list is empty, so pass every enabled module explicitly.
             $this->call(ModuleSeedCommand::class, [
-                '--force' => true
+                'module' => array_keys(Module::getOrdered()),
+                '--force' => true,
+                '--no-interaction' => true,
             ]);
         }
 

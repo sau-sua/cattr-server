@@ -9,23 +9,9 @@ services:
   app:
     override: replace
     summary: Laravel Octane application server
-    # Pebble does not expand environment variables in a command, hence the
-    # shell wrapper; exec keeps PHP as the process Pebble supervises.
-    #
-    # OCTANE_WORKERS / OCTANE_TASK_WORKERS default to "auto", which is one
-    # worker per CPU core: adding cores to the host scales the application
-    # without touching this file. Set a number only to cap or raise it, for
-    # example OCTANE_WORKERS=2 on a many-core host with little memory (budget
-    # roughly 100-150 MB of RAM per worker).
-    #
-    # OCTANE_MAX_REQUESTS recycles a worker after that many requests, which
-    # bounds slow memory growth. Lower it if workers grow too large between
-    # restarts.
-    command: >-
-      sh -c 'exec php artisan octane:start --host=0.0.0.0 --port=8090
-      --workers="${OCTANE_WORKERS:-auto}"
-      --task-workers="${OCTANE_TASK_WORKERS:-auto}"
-      --max-requests="${OCTANE_MAX_REQUESTS:-500}"'
+    command: php artisan octane:start --host=0.0.0.0 --port=8090
+    environment:
+      CATTR_LOG_SERVICE: app
     startup: disabled
     working-dir: /opt/cattr/app
     on-success: restart
@@ -53,6 +39,8 @@ services:
     summary: Laravel queue worker
     command: php artisan queue:work --sleep=3 --no-interaction
     startup: disabled
+    environment:
+      CATTR_LOG_SERVICE: queue
     working-dir: /opt/cattr/app
     on-success: restart
     on-failure: restart
@@ -65,6 +53,8 @@ services:
     summary: Laravel Reverb WebSocket server
     command: php artisan reverb:start --host=0.0.0.0 --port=8081
     startup: disabled
+    environment:
+      CATTR_LOG_SERVICE: reverb
     working-dir: /opt/cattr/app
     on-success: restart
     on-failure: restart
@@ -75,8 +65,10 @@ services:
   scheduler:
     override: replace
     summary: Laravel scheduler trigger
-    command: /usr/bin/supercronic /opt/cattr/crontab
+    command: /usr/bin/supercronic -json /opt/cattr/crontab
     startup: disabled
+    environment:
+      CATTR_LOG_SERVICE: scheduler
     working-dir: /opt/cattr/app
     on-success: restart
     on-failure: restart

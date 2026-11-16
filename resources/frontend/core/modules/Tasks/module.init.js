@@ -22,6 +22,8 @@ import ResourceSelect from '@/components/ResourceSelect.vue';
 import PhaseSelect from './components/PhaseSelect';
 import RelationsSelector from './components/RelationsSelector';
 import Attachments from './components/Attachments.vue';
+import en from './locales/en.json';
+import ru from './locales/ru.json';
 
 export const ModuleConfig = {
     routerPrefix: 'tasks',
@@ -1005,6 +1007,17 @@ export function init(context, router) {
 
     crud.view.addPageControls([
         {
+            label: 'tasks.add_time',
+            icon: 'icon-clock',
+            onClick: ({ $router, values }) => {
+                $router.push({
+                    path: '/time-intervals/new',
+                    query: { task_id: String(values.id), from_task: '1' },
+                });
+            },
+            renderCondition: ({ $can, values }) => !!values.id && $can('viewManualTime', 'dashboard'),
+        },
+        {
             label: 'tasks.relations.title',
             icon: 'icon-corner-down-right',
             onClick: ({ $router }) => {
@@ -1032,8 +1045,8 @@ export function init(context, router) {
     ]);
 
     context.addLocalizationData({
-        en: require('./locales/en'),
-        ru: require('./locales/ru'),
+        en,
+        ru,
     });
 
     context.addNavbarEntry({

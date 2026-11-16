@@ -153,6 +153,100 @@ class CreateTest extends TestCase
         $response->assertValidationError();
     }
 
+
+    public function test_manager_can_create_manual_time_for_assigned_user(): void
+    {
+        $manager = UserFactory::asManager()->create();
+        $manager->manual_time = true;
+        $manager->save();
+
+        $targetUser = UserFactory::asUser()->create();
+        $task = TaskFactory::forUser($targetUser)->create();
+        $data = [
+            ...$this->intervalData,
+            'user_id' => $targetUser->id,
+            'task_id' => $task->id,
+            'is_manual' => true,
+        ];
+
+        $response = $this->actingAs($manager)->postJson(self::URI, $data);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('time_intervals', [
+            'task_id' => $task->id,
+            'user_id' => $targetUser->id,
+            'is_manual' => true,
+        ]);
+    }
+
+    public function test_manager_cannot_create_manual_time_for_unassigned_user(): void
+    {
+        $manager = UserFactory::asManager()->create();
+        $manager->manual_time = true;
+        $manager->save();
+
+        $targetUser = UserFactory::asUser()->create();
+        $otherUser = UserFactory::asUser()->create();
+        $task = TaskFactory::forUser($otherUser)->create();
+        $data = [
+            ...$this->intervalData,
+            'user_id' => $targetUser->id,
+            'task_id' => $task->id,
+            'is_manual' => true,
+        ];
+
+        $response = $this->actingAs($manager)->postJson(self::URI, $data);
+
+        $response->assertForbidden();
+        $this->assertDatabaseMissing('time_intervals', [
+            'task_id' => $task->id,
+            'user_id' => $targetUser->id,
+        ]);
+    }
+
+    public function test_create_manual_interval_from_form_payload(): void
+    {
+        $data = [
+            'user_id' => $this->admin->id,
+            'task_id' => $this->task->id,
+            'timezone' => 'Europe/Moscow',
+            'start_at' => '2000-01-01T23:30:00.000Z',
+            'end_at' => '2000-01-02T00:25:00.000Z',
+            'is_manual' => true,
+        ];
+
+        $response = $this->actingAs($this->admin)->postJson(self::URI, $data);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('time_intervals', [
+            'user_id' => $this->admin->id,
+            'task_id' => $this->task->id,
+            'is_manual' => true,
+        ]);
+    }
+
+    public function test_end_before_start(): void
+    {
+        $this->intervalData['start_at'] = '1900-01-01 01:00:00';
+        $this->intervalData['end_at'] = '1900-01-01 00:50:00';
+
+        $response = $this->actingAs($this->admin)->postJson(self::URI, $this->intervalData);
+
+        $response->assertValidationError();
+        $this->assertDatabaseMissing('time_intervals', $this->intervalData);
+    }
+
+    public function test_end_equals_start(): void
+    {
+        $this->intervalData['start_at'] = '1900-01-01 01:00:00';
+        $this->intervalData['end_at'] = '1900-01-01 01:00:00';
+
+        $response = $this->actingAs($this->admin)->postJson(self::URI, $this->intervalData);
+
+        $response->assertValidationError();
+        $this->assertDatabaseMissing('time_intervals', $this->intervalData);
+    }
+
     public function test_unauthorized(): void
     {
         $response = $this->postJson(self::URI);

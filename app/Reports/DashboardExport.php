@@ -39,8 +39,7 @@ class DashboardExport extends AppReport implements FromCollection, WithMapping, 
         private readonly string               $userTimezone,
         private readonly DashboardSortBy|null $sortBy = null,
         private readonly SortDirection|null   $sortDirection = null,
-    )
-    {
+    ) {
         $this->period = CarbonPeriod::create(
             $this->startAt->clone()->setTimezone($this->userTimezone),
             $this->endAt->clone()->setTimezone($this->userTimezone)
@@ -55,8 +54,10 @@ class DashboardExport extends AppReport implements FromCollection, WithMapping, 
         $reportCollection = $this->queryReport($where)->map(static function ($interval) use ($that) {
             $start = Carbon::make($interval->start_at);
 
-            $interval->duration = Carbon::make($interval->end_at)?->diffInSeconds($start);
-            $interval->from_midnight = $start?->diffInSeconds($start?->copy()->startOfDay());
+            $duration = Carbon::make($interval->end_at)?->diffInSeconds($start, true);
+            $interval->duration = $duration === null ? null : (int) $duration;
+            $fromMidnight = $start?->diffInSeconds($start?->copy()->startOfDay(), true);
+            $interval->from_midnight = $fromMidnight === null ? null : (int) $fromMidnight;
 
             $interval->durationByDay = ReportHelper::getIntervalDurationByDay(
                 $interval,
@@ -153,7 +154,10 @@ class DashboardExport extends AppReport implements FromCollection, WithMapping, 
                 'time_intervals.is_manual',
                 'users.email as user_email',
             ]
-        )->whereIn('project_id', $this->projects);
+        );
+        if ($this->projects !== null) {
+            $query->whereIn('projects.id', $this->projects);
+        }
 
         if (!is_null($where)) {
             $query = $query->where($where);

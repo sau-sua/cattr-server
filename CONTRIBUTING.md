@@ -6,6 +6,8 @@ This guide describes both the technical development workflow and the rules used 
 
 The repository contains the Laravel backend, Vue frontend, module system, production container configuration, and release pipeline.
 
+For frontend and backend extension APIs, see the [developer guides](./docs/developer/README.md). The generated [HTTP API reference](https://docs.cattr.app/api/) is published separately.
+
 For general questions and ideas, use [GitHub Discussions](https://github.com/orgs/cattr-app/discussions). For bugs and actionable feature requests, use [GitHub Issues](https://github.com/cattr-app/server-application/issues).
 
 ## Contribution workflow
@@ -79,6 +81,8 @@ New or significantly changed UI sections must include screenshots in the pull re
 
 For substantial new UI functionality, updating the client-facing documentation is strongly encouraged and may be required during review.
 
+Backend bug fixes must include a test of the matching type that fails without the fix (see [Test types](#test-types)).
+
 Database changes must include appropriate migrations.
 
 Public API or configuration changes must be documented.
@@ -145,6 +149,19 @@ final fix
 ```
 
 Prefer amending or reorganizing local commits before publishing them when doing so does not rewrite already shared and reviewed history.
+
+### Optional local commit validation
+
+Developers who use [mise](https://mise.jdx.dev/) can enable the
+[hk](https://hk.jdx.dev/) `commit-msg` hook:
+
+```bash
+mise run setup-hooks
+```
+
+The hook validates Conventional Commit messages using `hk.pkl`. Mise manages
+the hk version through `mise.toml`. Local hooks are optional and are not
+required to contribute.
 
 ## Commit sign-off
 
@@ -265,9 +282,12 @@ The repository contains both the server-side application and the web frontend.
 | Path                  | Purpose                                               |
 |-----------------------|-------------------------------------------------------|
 | `app/`                | Laravel application code                              |
+| `bootstrap/app.php`   | Application setup: routing, middleware, and exceptions |
+| `bootstrap/providers.php` | Service providers registered for the application  |
 | `config/`             | Application configuration                             |
 | `database/`           | Migrations, seeders, and factories                    |
 | `routes/`             | API, web, and operational routes                      |
+| `routes/console.php`  | Artisan commands and scheduled tasks                  |
 | `resources/frontend/` | Vue frontend application                              |
 | `modules/`            | Backend modules                                       |
 | `tests/`              | Backend unit and feature tests                        |
@@ -280,23 +300,26 @@ The repository contains both the server-side application and the web frontend.
 
 The production application is distributed as a single container containing the backend, compiled frontend, Caddy, Laravel Octane, queue worker, Laravel Reverb, and scheduled jobs.
 
-The production build is Wolfi-based: the builder uses Node.js 24 with pnpm 12.5.1,
-and the runtime uses PHP 8.3, Caddy, Pebble, Laravel Octane, and Laravel Reverb.
+The production build is Wolfi-based: the builder uses Node.js 24 and the pnpm
+version declared in `package.json`; the runtime uses PHP 8.3, Caddy, Pebble,
+Laravel Octane, and Laravel Reverb.
 
 ## Development requirements
 
 Use the versions declared by the repository whenever possible.
 
-| Dependency | Version                            |
-|------------|------------------------------------|
-| PHP        | 8.3                                |
-| Laravel    | 10.x                               |
-| Node.js    | `.nvmrc`, currently 24.21          |
-| pnpm       | `packageManager`, currently 12.5.1 |
-| Composer   | Composer 2.10.3                    |
-| Database   | MySQL-compatible database          |
+| Dependency | Version source                        |
+|------------|---------------------------------------|
+| PHP        | `.php-version`, `composer.json`        |
+| Laravel    | `composer.json`                       |
+| Node.js    | `.nvmrc`                              |
+| pnpm       | `packageManager` in `package.json`    |
+| Composer   | Composer 2.x                          |
+| Database   | MySQL-compatible database             |
 
-Corepack is required to use the pnpm version pinned by the repository.
+Mise is an optional way to install Node.js and pnpm using these version
+declarations. PHP is intentionally not managed by this repository's
+`mise.toml`; use a PHP version manager or a container-based environment.
 
 The PHP installation must provide the extensions required by `composer.json`, including GD, JSON, OpenSSL, PDO, and ZIP. When using MySQL locally, the corresponding PDO MySQL driver is also required.
 
@@ -327,15 +350,21 @@ Generate the application key:
 php artisan key:generate
 ```
 
-Activate the repository Node.js version when using `nvm`:
+Install Node.js, pnpm, and frontend dependencies with mise, if you use it:
+
+```bash
+mise install
+pnpm install --frozen-lockfile
+```
+
+Mise reads Node.js from `.nvmrc` and pnpm from the `packageManager` field
+in `package.json`.
+
+Other Node.js version managers remain supported. For example, with nvm
+and Corepack:
 
 ```bash
 nvm use
-```
-
-Enable Corepack and install frontend dependencies:
-
-```bash
 corepack enable
 pnpm install --frozen-lockfile
 ```
@@ -468,7 +497,7 @@ pnpm lint
 
 Frontend formatting is defined by `prettier.config.js`.
 
-ESLint configuration is defined by `.eslintrc.js`.
+ESLint configuration is defined by `eslint.config.js` (ESLint flat config).
 
 The frontend currently uses Vue 2.7, Vue Router 3, Vuex 3, Laravel Mix, and Webpack 5.
 
@@ -476,7 +505,7 @@ Generated frontend output should not be committed.
 
 ## Backend development
 
-The backend is a Laravel 10 application running on PHP 8.3.
+The backend is a Laravel 13 application running on PHP 8.3.
 
 Available Artisan commands can be inspected with:
 
@@ -510,6 +539,11 @@ Backend tests live under:
 tests/Unit/
 tests/Feature/
 ```
+
+`mockery/mockery` is kept in `require-dev` even though the suite does not call it
+directly: Laravel's console test helper `$this->artisan()` (`PendingCommand`) needs it
+for output expectations, and `$this->mock()` / `$this->partialMock()` / `$this->spy()`
+helpers depend on it as well.
 
 Create a testing environment:
 
@@ -550,6 +584,39 @@ vendor/bin/phpunit --testsuite Feature
 ```
 
 Coverage requires Xdebug with coverage mode enabled.
+
+### Test types
+
+Most application logic lives in controllers, policies, Eloquent queries and observers, so feature tests are the default. Unit tests are used narrowly.
+
+| Type                    | What it covers                                                                                                                                                  | How to recognise it                                                                  |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Feature, HTTP (default) | everything that goes through a route: authorization and policies, FormRequest validation, filters, response shape, database changes, dispatched events and jobs | the test calls an endpoint                                                           |
+| Feature, no HTTP        | artisan commands, seeders, queued jobs, listeners, observers                                                                                                    | needs the database or the application container, but there is no route               |
+| Unit                    | pure logic without the database: enums and their rules, duration and timezone calculations in reports, module flag parsing, helpers                             | extends `PHPUnit\Framework\TestCase`, touches neither the database nor the container |
+
+Rule of thumb: if a test needs the database or the application container, it is a feature test. If the logic can be checked by passing input and comparing the output, it is a unit test.
+
+Unit tests are worth it where logic has many input combinations that would be slow to cover through HTTP; a table-driven unit test covers them in milliseconds. Example: `ScreenshotsState` with global overrides, the viewer's role and the lock flag.
+
+Do not:
+
+- mock Eloquent or repositories to test a controller "in isolation": such tests check how the code calls the ORM, not what it does;
+- chase a coverage percentage with unit tests: endpoint coverage matters more.
+
+Every backend bug fix comes with a test of the matching type that reproduces the bug.
+
+### Endpoint coverage
+
+`tests/Feature/Routes/GetRoutesSmokeTest.php` calls every registered `GET` route as an admin on seeded data and fails if any of them returns a 5xx. A new `GET` route with a path parameter needs a seeded value in the test; a route that cannot be called this way goes to the test's exclusion list with a reason.
+
+The smoke test only catches crashes. To list the routes that no feature test calls, run:
+
+```bash
+php scripts/route-coverage.php
+```
+
+It runs the Feature suite with `ROUTE_COVERAGE_LOG` set, so that `tests/TestCase.php` records every matched route, and prints the remaining routes as a Markdown checklist. The smoke test does not count as coverage. Pass `--log=<file>` to report from the log of an earlier run.
 
 Run frontend validation with:
 
@@ -637,62 +704,175 @@ Routine dependency upgrades should normally be submitted separately from unrelat
 
 ## Module system
 
-Cattr supports backend and frontend modules.
+Cattr always initializes built-in frontend modules. External frontend and backend modules
+are bundled or installed with the application, but **disabled by default**.
 
-### Backend modules
-
-Backend modules are stored under:
-
-```text
-modules/
-```
-
-Composer merges module-level Composer definitions from:
+Enable each external module independently with an explicit environment variable:
 
 ```text
-modules/*/composer.json
+MODULE_FRONTEND_AMAZING_CAT_REDMINE_INTEGRATION_ENABLED=true
+MODULE_BACKEND_CATTR_REDMINE_INTEGRATION_ENABLED=true
+MODULE_FRONTEND_AMAZING_CAT_GITLAB_INTEGRATION_ENABLED=true
+MODULE_BACKEND_CATTR_GITLAB_INTEGRATION_ENABLED=true
+MODULE_FRONTEND_AMAZING_CAT_DEMO_MODULE_ENABLED=true
+MODULE_BACKEND_CATTR_DEMO_ENABLED=true
 ```
 
-using `wikimedia/composer-merge-plugin`.
+Only the exact lowercase string `true` enables an external module. Missing variables,
+`false`, `1`, and other values disable it. Backend and frontend activation flags
+are resolved by Laravel's `artisan config:cache` into `bootstrap/cache/config.php`
+when the container starts. A changed container environment takes effect after the
+container is recreated; no image rebuild is needed. Set backend flags
+consistently for the application, queue, scheduler, and migration roles.
 
-The root `modules.json` contains backend module configuration.
+The flag name is the module identifier converted to upper snake case with the rules in
+[docs/dev/module-activation-flags.md](docs/dev/module-activation-flags.md): `CattrRedmineIntegration`
+(backend `module.json` name) becomes `MODULE_BACKEND_CATTR_REDMINE_INTEGRATION_ENABLED`,
+`AmazingCat_RedmineIntegration` (frontend `ModuleConfig.moduleName`) becomes
+`MODULE_FRONTEND_AMAZING_CAT_REDMINE_INTEGRATION_ENABLED`. The same algorithm is implemented in
+`App\Services\ModuleActivatorService::flagName()` and `resources/frontend/core/utils/moduleFlagName.js`
+and both are tested against `tests/fixtures/module-flag-names.json`. Frontend and backend modules
+are installed and enabled independently and do not depend on one another's flags.
 
-The base repository currently does not enable additional modules by default.
+Backend module discovery still reads `module.json` for names and providers. Its `active` field
+does **not** control activation, and `modules*.json` files are not consulted. Artisan
+`module:enable` / `module:disable` refuse to run; `module:delete` and the activator reset only log
+a warning that nothing changed. The legacy `modules` database table has been dropped.
 
-Core code should not assume that an optional module is installed.
-
-### Frontend modules
-
-The base frontend module configuration is:
-
-```text
-resources/frontend/etc/modules.config.json
-```
-
-Additional configuration is merged in this order:
-
-```text
-modules.config.json
-modules.<NODE_ENV>.json
-modules.ci.json
-modules.local.json
-```
-
-Later configuration overrides earlier values.
-
-`modules.local.json` is intended for developer-specific configuration and is ignored by Git.
-
-Package-based frontend modules are statically included during compilation when configured as:
+External frontend package registration is build-time configuration in
+`resources/frontend/etc/modules.config.json` (with the existing optional overlays). For example:
 
 ```json
 {
-    "type": "package",
-    "ref": "package-name",
-    "enabled": true
+    "AmazingCat_RedmineIntegration": {
+        "type": "package",
+        "ref": "@amazingcat/cattr-redmine-integration"
+    }
 }
 ```
 
-`enabled` defaults to `true`.
+The key of each entry must equal the package's `ModuleConfig.moduleName`: the frontend derives the
+flag name from that key before the chunk is downloaded.
+
+These files **only determine what gets bundled**, not what gets enabled. Package modules are
+emitted as separate webpack chunks and are imported lazily only when their runtime flag is
+`true`, so disabled modules do not ship in the main bundle. An optional module must already
+be installed when building the image; adding an env flag cannot install missing code. Local
+frontend modules are discovered in `resources/frontend/vendor_modules/<vendor>/<module>/module.init.js`;
+`ModuleConfig.enabled` has no effect on activation. Internal frontend modules always initialize.
+
+### Installing backend modules
+
+Backend modules are ordinary Composer packages of type `laravel-module`; `nwidart/laravel-modules`
+discovers `module.json` both in `modules/` and in `vendor/*/*`. The Composer merge plugin is no
+longer used, so a directory dropped into `modules/` does not get its dependencies or autoload
+installed; install modules through Composer instead:
+
+```bash
+# published package
+composer require cattr/redmine_integration-module
+
+# local checkout, symlinked for development (any path outside the repository works)
+composer config repositories.redmine path ../redmine-integration
+composer require cattr/redmine_integration-module:@dev
+```
+
+The path repository is a local setting; do not commit it. Then set
+`MODULE_BACKEND_<FLAG_NAME>_ENABLED=true` in `.env`, run `php artisan migrate` for the module
+migrations and restart Octane. `php artisan module:list` shows what was discovered and whether
+the flag enabled it.
+
+### Installing frontend modules
+
+Frontend modules are npm packages. Add the package (or link a local checkout) and register it in
+`modules.config.json` (or a local overlay):
+
+```bash
+pnpm add @amazingcat/cattr-redmine-integration
+# or, for a local checkout
+pnpm link ../redmine-integration/frontend
+```
+
+Then set `MODULE_FRONTEND_<FLAG_NAME>_ENABLED=true` and rebuild the assets (`pnpm prod` or
+`pnpm watch`).
+
+### Building an image with modules
+
+The official `Dockerfile` installs dependencies only from the repository's own `composer.json`,
+`package.json` and lockfiles, and bundles only the frontend packages registered in
+`resources/frontend/etc/modules.config.json`. The published `ghcr.io/cattr-app/server-application`
+image therefore contains exactly the modules declared there; for those, setting
+`MODULE_*_ENABLED=true` is enough. A module that is not declared in the repository is not in the
+image, and its flag has nothing to enable. To ship your own modules, build your own image from a
+checkout of the release you deploy.
+
+Copy the official `Dockerfile` (for example to `Dockerfile.modules`) and add one step to the
+builder stage, right after `COPY --chown=10000:10000 . /opt/cattr/app` and before the
+`composer install` step:
+
+```dockerfile
+# Space-separated lists; leave a list empty to skip that side.
+# Example: --build-arg COMPOSER_MODULES="acme/cattr-reports-module"
+ARG COMPOSER_MODULES=""
+# Entries are <ModuleConfig.moduleName>=<npm package>.
+# Example: --build-arg FRONTEND_MODULES="Acme_Reports=@acme/cattr-reports"
+ARG FRONTEND_MODULES=""
+
+RUN set -eux; \
+    if [ -n "${COMPOSER_MODULES}" ]; then \
+        composer require --no-interaction --no-install ${COMPOSER_MODULES}; \
+    fi; \
+    for entry in ${FRONTEND_MODULES}; do \
+        name="${entry%%=*}"; package="${entry#*=}"; \
+        pnpm add --lockfile-only "${package}"; \
+        node -e ' \
+            const fs = require("fs"); \
+            const file = "resources/frontend/etc/modules.config.json"; \
+            const config = JSON.parse(fs.readFileSync(file, "utf8")); \
+            config[process.argv[1]] = { type: "package", ref: process.argv[2] }; \
+            fs.writeFileSync(file, JSON.stringify(config, null, 4) + "\n"); \
+        ' "${name}" "${package}"; \
+    done
+```
+
+The step only changes the manifests, lockfiles and `modules.config.json`; the unchanged
+`composer install`, `pnpm install --frozen-lockfile` and `pnpm prod` steps that follow then
+install the modules and bundle each frontend module as its own lazy chunk:
+
+- `composer require --no-install` adds the backend package (a Composer package of type
+  `laravel-module`) to `composer.json` and `composer.lock` without installing it, so the
+  following `composer install` and optimized autoloader include it;
+- `pnpm add --lockfile-only` adds the frontend package to `package.json` and `pnpm-lock.yaml`,
+  so `pnpm install --frozen-lockfile` still passes;
+- the key written to `resources/frontend/etc/modules.config.json` must equal the package's
+  `ModuleConfig.moduleName`, otherwise the frontend derives a different flag name and never
+  loads the chunk.
+
+Build the image with your module lists:
+
+```bash
+podman build -f Dockerfile.modules \
+    --build-arg COMPOSER_MODULES="<vendor>/<module>" \
+    --build-arg FRONTEND_MODULES="<ModuleConfig.moduleName>=<npm package>" \
+    -t cattr-server-modules .
+```
+
+Then enable the modules in the container environment (for every role that runs the backend:
+application, queue, scheduler and migration) and recreate the containers:
+
+```text
+MODULE_BACKEND_<FLAG_NAME>_ENABLED=true
+MODULE_FRONTEND_<FLAG_NAME>_ENABLED=true
+```
+
+Module migrations run with the regular `migrate` role or start-up migration. To check the result:
+
+```bash
+podman run --rm --env-file .env cattr-server-modules exec php artisan module:list
+```
+
+The module must be listed as enabled; in the browser, its frontend chunk is requested after login
+when its frontend flag is `true`.
 
 ## Container architecture
 
@@ -778,7 +958,7 @@ build/packages/corepack.yaml
 ```
 
 The generated APK is added to the builder image and Corepack activates the pnpm
-version pinned by `package.json` (`pnpm@12.5.1`).
+version pinned by `package.json`.
 
 When changing base-image dependencies, modify the relevant apko or Melange configuration instead of installing additional system packages in the application Dockerfile unless there is a specific reason to do otherwise.
 
@@ -803,9 +983,19 @@ The release process:
 3. Builds the Corepack APK with Melange when required.
 4. Builds missing base images with apko.
 5. Publishes base images to `ghcr.io/cattr-app/server-runtime`.
-6. Updates the `runtime-latest` and `builder-latest` aliases.
+6. Updates `runtime-latest` and `builder-latest` only for stable releases.
 7. Builds the application with Buildah.
-8. Publishes the release version and `latest` to `ghcr.io/cattr-app/server`.
+8. Publishes the exact application version, and also `latest` for stable releases.
+
+Prereleases (for example, `v4.1.0-rc.1`) use exact-version application tags and
+content-hash runtime/builder tags without moving any `*-latest` aliases.
+Stable releases (for example, `v4.1.0`) also move the application `latest` and
+base-image `runtime-latest`/`builder-latest` aliases. Unsupported `v*` tags,
+including SemVer build metadata (`+...`, which is incompatible with OCI tags),
+fail validation before images are built or published.
+
+The `Release checks` workflow tests tag classification and lints the release
+workflow for pull requests changing the release pipeline.
 
 Changes to the release pipeline should preserve reproducible application builds and avoid unnecessary rebuilding of unchanged base images.
 

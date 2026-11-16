@@ -4,7 +4,8 @@
 # frontend needs several GB of RAM, far more than running Cattr does. Build
 # and publish the image with the Release workflow, then pull it here.
 #
-#   cp .env.example .env    # set at least APP_KEY, DB_PASSWORD, CATTR_IMAGE
+#   cp .env.example .env    # set at least APP_KEY, DB_PASSWORD,
+#                           # REVERB_APP_SECRET and CATTR_IMAGE
 #   docker compose -f docker-compose.prod.yml up -d
 #
 # Sizing
@@ -28,9 +29,9 @@
 # reached at the same time in normal use, and swap absorbs the overlap.
 #
 # Two things scale by themselves inside the application container and need no
-# setting: the number of Octane workers follows the CPU count, and PHP's
-# memory_limit follows APP_MEM_LIMIT. See OCTANE_WORKERS and PHP_MEMORY_LIMIT
-# in .env.example to override them.
+# setting: the number of Octane workers follows the CPU count of the host, and
+# PHP's memory_limit follows APP_MEM_LIMIT. See OCTANE_WORKERS and
+# PHP_MEMORY_LIMIT in .env.example to override them.
 #
 # On hosts with 2 GB of RAM or less, add swap (1-2 GB) so that a short spike
 # is slowed down instead of killed. No swap limit is set here on purpose:

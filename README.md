@@ -59,21 +59,45 @@ The Cattr desktop client provides native time tracking and activity collection.
 
 Interested in contributing or building Cattr locally?
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+See [CONTRIBUTING.md](./CONTRIBUTING.md) and the [developer guides](docs/developer/README.md).
 
-Build the API, frontend, and backend documentation site from the repository root:
+Build the published API reference (OpenAPI via dedoc/scramble, rendered with Redoc) from the repository root.
+The export needs `composer install` with dev dependencies and a migrated database:
 
 ```bash
+php artisan scramble:export --path=storage/app/tmp/openapi.json
 pnpm install --frozen-lockfile
 pnpm build:pages
 ```
+
+## Modules
+
+External backend and frontend modules are installed independently and are **disabled by
+default**. Each one is switched on with its own environment variable:
+
+```text
+MODULE_BACKEND_<FLAG_NAME>_ENABLED=true     # backend module, <FLAG_NAME> from module.json "name"
+MODULE_FRONTEND_<FLAG_NAME>_ENABLED=true    # frontend module, <FLAG_NAME> from ModuleConfig.moduleName
+```
+
+`<FLAG_NAME>` is the module identifier in upper snake case: a `_` is inserted before an
+uppercase letter that follows a lowercase letter or a digit, any other separator becomes
+`_`, and the result is uppercased (`CattrRedmineIntegration` -> `CATTR_REDMINE_INTEGRATION`,
+`AmazingCat_RedmineIntegration` -> `AMAZING_CAT_REDMINE_INTEGRATION`, `Module2` -> `MODULE2`).
+Only the exact value `true` enables a module. The full rules and examples are in
+[docs/dev/module-activation-flags.md](docs/dev/module-activation-flags.md); installing
+modules for development is described in [CONTRIBUTING.md](CONTRIBUTING.md#module-system).
+
+The published Docker image contains only the modules declared in the repository's
+`composer.json`, `package.json` and `modules.config.json`; to ship other modules, build a custom
+image as described in
+[Building an image with modules](CONTRIBUTING.md#building-an-image-with-modules).
 
 ## Documentation
 
 - [User Guide](https://docs.cattr.app)
 - [API Reference](https://cattr-app.github.io/server-application/api/)
-- [Backend Documentation](https://cattr-app.github.io/server-application/backend/)
-- [Frontend Documentation](https://cattr-app.github.io/server-application/frontend/)
+- [Developer guides (English / Русский)](docs/developer/README.md)
 
 ## Community
 

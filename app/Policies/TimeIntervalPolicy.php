@@ -7,7 +7,6 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TimeInterval;
 use App\Models\User;
-use Cache;
 use Illuminate\Contracts\Database\Query\Builder;
 
 class TimeIntervalPolicy
@@ -37,7 +36,16 @@ class TimeIntervalPolicy
             }
 
             if ($user->id !== $userId) {
-                return $user->hasRole(Role::MANAGER) || $user->hasProjectRole(Role::MANAGER, $projectId);
+                // Managers may enter manual time for others only on tasks assigned to that user.
+                $assignedToUser = Task::withoutGlobalScopes()
+                    ->whereKey($taskId)
+                    ->whereHas('users', static fn ($query) => $query
+                        ->where('users.id', $userId)
+                        ->withoutGlobalScopes())
+                    ->exists();
+
+                return $assignedToUser
+                    && ($user->hasRole(Role::MANAGER) || $user->hasProjectRole(Role::MANAGER, $projectId));
             }
 
             return (
@@ -105,15 +113,15 @@ class TimeIntervalPolicy
         return true;
     }
 
+    /**
+     * Not cached on purpose: a task can be moved to another project, and a stale value would
+     * authorize an interval against the old project.
+     */
     private static function getProjectIdByTaskId(int $taskId): int
     {
-        return Cache::store('octane')->remember(
-            "project_of_task_$taskId",
-            config('cache.role_caching_ttl'),
-            static fn() => Project::whereHas(
-                'tasks',
-                static fn(Builder $query) => $query->where('id', '=', $taskId)->withoutGlobalScopes()
-            )->withoutGlobalScopes()->firstOrFail()->id
-        );
+        return Project::whereHas(
+            'tasks',
+            static fn(Builder $query) => $query->where('id', '=', $taskId)->withoutGlobalScopes()
+        )->withoutGlobalScopes()->firstOrFail()->id;
     }
 }

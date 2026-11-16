@@ -9,7 +9,7 @@
                 class="project-groups__search-container__search col-6"
                 @input="onSearch"
             >
-                <template slot="prepend">
+                <template #prepend>
                     <i class="icon icon-search" />
                 </template>
             </at-input>
@@ -47,7 +47,7 @@
     import ProjectGroupsService from '@/services/resource/project-groups.service';
     import GroupCollapsable from '../components/GroupCollapsable';
     import Preloader from '@/components/Preloader';
-    import debounce from 'lodash.debounce';
+    import debounce from 'lodash/debounce';
 
     const service = new ProjectGroupsService();
 
@@ -207,8 +207,8 @@
                 }
             }
         }
-        &::v-deep {
-            .at-container {
+        & {
+            :deep(.at-container) {
                 overflow: hidden;
                 margin-bottom: 1rem;
             }

@@ -71,6 +71,7 @@
     import FieldsSelect from './FieldsSelect';
     import { mapGetters, mapMutations } from 'vuex';
     import UniversalReportService from '../service/universal-report.service';
+    import { isHandledRequestError } from '@/utils/requestError';
 
     const service = new UniversalReportService();
 
@@ -133,9 +134,14 @@
             },
         },
         async mounted() {
-            await service.getBases().then(({ data }) => {
+            try {
+                const { data } = await service.getBases();
                 this.setBases(data.data);
-            });
+            } catch (error) {
+                if (!isHandledRequestError(error)) {
+                    throw error;
+                }
+            }
         },
         methods: {
             ...mapMutations({
@@ -288,12 +294,12 @@
             color: #e2ecf4;
         }
 
-        &::v-deep {
-            .at-menu__item--active > .at-menu__item-link {
+        & {
+            :deep(.at-menu__item--active > .at-menu__item-link) {
                 color: #6190e8 !important;
             }
 
-            .at-menu__item-link::after {
+            :deep(.at-menu__item-link::after) {
                 transform: scaleX(1) !important;
             }
         }

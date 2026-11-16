@@ -10,7 +10,9 @@ use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Pagination\AbstractPaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
-use RuntimeException;
+use Illuminate\Validation\ValidationException;
+use ReflectionMethod;
+use ReflectionNamedType;
 
 class QueryHelper
 {
@@ -23,6 +25,25 @@ class QueryHelper
         'with_deleted',
         'search',
     ];
+
+    /**
+     * Whether a filter key names a relation of the model. Only public methods declared to return
+     * a Relation qualify, so a filter can never call an arbitrary model method such as save().
+     */
+    private static function isRelation(Model $model, string $name): bool
+    {
+        if (!method_exists($model, $name)) {
+            return false;
+        }
+
+        $method = new ReflectionMethod($model, $name);
+        $type = $method->getReturnType();
+
+        return $method->isPublic()
+            && !$method->isStatic()
+            && $type instanceof ReflectionNamedType
+            && is_a($type->getName(), Relation::class, true);
+    }
 
     /**
      * @throws Exception
@@ -106,10 +127,10 @@ class QueryHelper
 
         if (!empty($relations)) {
             foreach ($relations as $domain => $filters) {
-                if (!method_exists($model, $domain)) {
-                    $cls = get_class($model);
-                    throw new RuntimeException("Unknown relation $cls::$domain()");
-                }
+                throw_unless(
+                    self::isRelation($model, $domain),
+                    ValidationException::withMessages(['where' => "Unknown relation $domain"])
+                );
 
                 /** @var Relation $relationQuery */
                 $relationQuery = $model->{$domain}();
@@ -167,8 +188,7 @@ class QueryHelper
             $field = array_shift($fields);
             if (str_contains($field, '.')) {
                 [$relation, $relationField] = explode('.', $field);
-                $query->whereHas($relation, static fn(Builder $query) => $query->where($relationField, 'like', $value)
-                );
+                $query->whereHas($relation, static fn(Builder $query) => $query->where($relationField, 'like', $value));
             } else {
                 $query->where($field, 'like', $value);
             }
@@ -176,8 +196,7 @@ class QueryHelper
             foreach ($fields as $field) {
                 if (str_contains($field, '.')) {
                     [$relation, $relationField] = explode('.', $field);
-                    $query->orWhereHas($relation, static fn(Builder $query) => $query->where($relationField, 'like', $value)
-                    );
+                    $query->orWhereHas($relation, static fn(Builder $query) => $query->where($relationField, 'like', $value));
                 } else {
                     $query->orWhere($field, 'like', $value);
                 }
@@ -190,7 +209,9 @@ class QueryHelper
         return [
             'limit' => 'sometimes|int',
             'offset' => 'sometimes|int',
-            'orderBy' => 'sometimes|array',
+            'orderBy' => 'sometimes|array|list|min:1|max:2',
+            'orderBy.0' => 'required_with:orderBy|string',
+            'orderBy.1' => ['sometimes', 'string', 'regex:/^(asc|desc)$/i'],
             'with.*' => 'sometimes|string',
             'withCount.*' => 'sometimes|string',
             'withSum.*.*' => 'sometimes|string',

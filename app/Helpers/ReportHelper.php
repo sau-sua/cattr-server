@@ -3,6 +3,7 @@
 namespace App\Helpers;
 
 use App\Models\Project;
+use App\Scopes\ProjectAccessScope;
 use App\Models\Task;
 use App\Models\TimeInterval;
 use App\Models\User;
@@ -48,9 +49,9 @@ class ReportHelper
         Carbon $startAt,
         Carbon $endAt,
         array  $select = []
-    ): Builder
-    {
-        return Project::join('tasks', 'tasks.project_id', '=', 'projects.id')
+    ): Builder {
+        return Project::withoutGlobalScope(ProjectAccessScope::class)
+            ->join('tasks', 'tasks.project_id', '=', 'projects.id')
             ->join('time_intervals', 'time_intervals.task_id', '=', 'tasks.id')
             ->join('users', 'time_intervals.user_id', '=', 'users.id')
             ->select(array_unique(
@@ -68,6 +69,9 @@ class ReportHelper
             ->where(fn($query) => $query->whereBetween('time_intervals.start_at', [$startAt, $endAt])
                 ->orWhereBetween('time_intervals.end_at', [$startAt, $endAt]))
             ->whereNull('time_intervals.deleted_at')
+            // Keep historical intervals available to their owner while enforcing
+            // the same interval permissions used by the time-interval API.
+            ->whereIn('time_intervals.id', TimeInterval::query()->select('time_intervals.id'))
             ->whereIn('users.id', $users)
             ->groupBy(['tasks.id', 'users.id', 'time_intervals.start_at'])
             ->orderBy('time_intervals.start_at');
@@ -113,11 +117,11 @@ class ReportHelper
         } else {
 //              If interval spans over midnight, divide it at midnight
             $startOfDay = $endAt->copy()->startOfDay();
-            $startDateDuration = $startOfDay->diffInSeconds($startAt);
+            $startDateDuration = (int) $startOfDay->diffInSeconds($startAt, true);
 
             $durationByDay[$startDate] = $startDateDuration;
 
-            $endDateDuration = $endAt->diffInSeconds($startOfDay);
+            $endDateDuration = (int) $endAt->diffInSeconds($startOfDay, true);
 
             $durationByDay[$endDate] = $endDateDuration;
         }

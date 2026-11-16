@@ -3,7 +3,28 @@
     "crud_title": "Add time interval",
     "task_select": {
       "placeholder": "Type at least 3 characters to search",
-      "no_options": "Sorry, no matching options."
+      "no_options": "Sorry, no matching options.",
+      "loading": "Loading more tasks...",
+      "load_failed": "Could not load tasks.",
+      "retry": "Retry",
+      "checking": "Checking task access...",
+      "invalid_id": "Invalid task ID. Select a task manually.",
+      "unavailable": "Task unavailable for this user. Select another task.",
+      "type_to_search": "Type at least 3 characters to search tasks.",
+      "recent": "Recent tasks"
+    },
+    "duration": {
+      "label": "Duration",
+      "custom": "Custom",
+      "minutes": "min",
+      "minutes_short": "{count} min",
+      "hours": "{count} hour | {count} hours",
+      "hint": "End time = start time + duration. Changing the end time updates the duration.",
+      "errors": {
+        "invalid": "Enter the duration as a number of minutes.",
+        "not_positive": "The duration must be greater than zero: the end time must be after the start time.",
+        "too_long": "The duration cannot exceed {max} minutes ({hours} hours)."
+      }
     }
   }
 }

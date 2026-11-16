@@ -3,41 +3,55 @@
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\ScreenshotService;
+use App\Enums\OfflineScreenshotUploadStatus;
 use App\Enums\ScreenshotsState;
+use App\Exceptions\Entities\AuthorizationException;
 use App\Http\Requests\Interval\BulkDestroyTimeIntervalRequest;
 use App\Http\Requests\Interval\BulkEditTimeIntervalRequest;
 use App\Http\Requests\Interval\CreateTimeIntervalRequest;
 use App\Http\Requests\Interval\DestroyTimeIntervalRequest;
-use App\Http\Requests\Interval\EditTimeIntervalRequest;
 use App\Http\Requests\Interval\IntervalTasksRequest;
 use App\Http\Requests\Interval\IntervalTotalRequest;
 use App\Http\Requests\Interval\ListIntervalRequest;
 use App\Http\Requests\Interval\PutScreenshotRequest;
 use App\Http\Requests\Interval\ScreenshotRequest;
+use App\Helpers\OfflineScreenshotsArchive;
 use App\Http\Requests\Interval\ShowIntervalRequest;
+use App\Http\Requests\Interval\ShowOfflineScreenshotsUploadRequest;
 use App\Http\Requests\Interval\TrackAppRequest;
 use App\Http\Requests\Interval\UploadOfflineIntervalsRequest;
 use App\Http\Requests\Interval\UploadOfflineScreenshotsRequest;
 use App\Jobs\AssignAppsToTimeInterval;
+use App\Jobs\ProcessOfflineScreenshotsUpload;
+use App\Models\OfflineScreenshotUpload;
+use App\Models\OfflineScreenshotUploadItem;
 use App\Models\Task;
 use App\Models\TrackedApplication;
 use App\Models\User;
 use CatEvent;
+use DB;
 use Filter;
 use App\Models\TimeInterval;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use MessagePack\MessagePack;
-use phpseclib3\Crypt\RSA;
+use phpseclib4\Crypt\RSA;
+use phpseclib4\Exception\BadDecryptionException;
+use phpseclib4\Exception\KeyConstraintException;
 use Settings;
 use Spatie\TemporaryDirectory\TemporaryDirectory;
 use Storage;
 use Str;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use RuntimeException;
 use Throwable;
 use Validator;
 use ZipArchive;
@@ -51,30 +65,11 @@ class IntervalController extends ItemController
     }
 
     /**
-     * @param ListIntervalRequest $request
+     * List
      *
-     * @return JsonResponse
-     * @throws Exception
-     */
-
-    /**
-     * @api             {post} /time-intervals/list List
-     * @apiDescription   Get list of Time Intervals
+     * Get list of Time Intervals
      *
-     * @apiVersion      4.0.0
-     * @apiName         List
-     * @apiGroup        Time Interval
-     *
-     * @apiUse          AuthHeader
-     *
-     * @apiPermission   time_intervals_list
-     * @apiPermission   time_intervals_full_access
-     * @apiUse          TimeIntervalObject
-     *
-     * @apiUse          400Error
-     * @apiUse          ValidationError
-     * @apiUse          UnauthorizedError
-     * @apiUse          ForbiddenError
+     * Required permission (any of): `time_intervals_list`, `time_intervals_full_access`
      */
 
     public function index(ListIntervalRequest $request): JsonResponse
@@ -87,179 +82,54 @@ class IntervalController extends ItemController
             return $filters;
         });
 
+        Filter::listen(Filter::getActionFilterName(), static function ($items) {
+            $items->each(
+                static fn (TimeInterval $interval) => $interval->append(TimeInterval::SCREENSHOT_URL_ATTRIBUTES)
+            );
+
+            return $items;
+        });
+
         return $this->_index($request);
     }
 
     /**
-     * @param ShowIntervalRequest $request
+     * Show
      *
-     * @return JsonResponse
-     * @throws Throwable
-     * @api             {post} /time-intervals/show Show
-     * @apiDescription  Show Time Interval
+     * Show Time Interval
      *
-     * @apiVersion      4.0.0
-     * @apiName         Show
-     * @apiGroup        Time Interval
-     *
-     * @apiUse          AuthHeader
-     *
-     * @apiPermission   time_intervals_show
-     * @apiPermission   time_intervals_full_access
-     *
-     * @apiParam {Integer}  id     Time Interval id
-     *
-     *
-     * @apiParamExample {json} Request Example
-     * {
-     *   "id": 1
-     * }
-     *
-     * @apiUse          TimeIntervalObject
-     * @apiUse          400Error
-     * @apiUse          UnauthorizedError
-     * @apiUse          ItemNotFoundError
-     * @apiUse          ForbiddenError
-     * @apiUse          ValidationError
+     * Required permission (any of): `time_intervals_show`, `time_intervals_full_access`
      */
     public function show(ShowIntervalRequest $request): JsonResponse
     {
+        Filter::listen(
+            Filter::getActionFilterName(),
+            static fn (?TimeInterval $interval) => $interval?->append(TimeInterval::SCREENSHOT_URL_ATTRIBUTES),
+        );
+
         return $this->_show($request);
     }
 
     /**
-     * @apiDeprecated   since 1.0.0
-     * @api             {post} /time-intervals/bulk-create Bulk Create
-     * @apiDescription  Create Time Intervals
+     * Count
      *
-     * @apiVersion      1.0.0
-     * @apiName         Bulk Create
-     * @apiGroup        Time Interval
-     */
-
-    /**
-     * @param EditTimeIntervalRequest $request
+     * Count Time Intervals
      *
-     * @return JsonResponse
-     * @throws Throwable
-     */
-    public function edit(EditTimeIntervalRequest $request): JsonResponse
-    {
-        Filter::listen(Filter::getRequestFilterName(), static function ($requestData) {
-            $requestData['start_at'] = Carbon::parse($requestData['start_at'])->setTimezone('UTC')->toDateTimeString();
-            $requestData['end_at'] = Carbon::parse($requestData['end_at'])->setTimezone('UTC')->toDateTimeString();
-        });
-
-        return $this->_edit($request);
-    }
-
-
-
-    /**
-     * @throws Exception
-     * @api             {get,post} /time-intervals/count Count
-     * @apiDescription  Count Time Intervals
-     *
-     * @apiVersion      1.0.0
-     * @apiName         Count
-     * @apiGroup        Time Interval
-     *
-     * @apiUse          AuthHeader
-     *
-     * @apiSuccess {String}   total    Amount of users that we have
-     *
-     * @apiSuccessExample {json} Response Example
-     *  HTTP/1.1 200 OK
-     *  {
-     *    "total": 2
-     *  }
-     *
-     * @apiUse          400Error
-     * @apiUse          ForbiddenError
-     * @apiUse          UnauthorizedError
+     * @deprecated since 1.0.0
      */
     public function count(ListIntervalRequest $request): JsonResponse
     {
         return $this->_count($request);
     }
 
-    /**
-     * @api             {post} /time-intervals/edit Edit
-     * @apiDescription  Edit Time Interval
-     *
-     * @apiVersion      1.0.0
-     * @apiName         Edit
-     * @apiGroup        Time Interval
-     *
-     * @apiUse          AuthHeader
-     *
-     * @apiPermission   time_intervals_edit
-     * @apiPermission   time_intervals_full_access
-     *
-     * @apiParam {Integer}  id           Time Interval id
-     *
-     * @apiUse          TimeIntervalParams
-     *
-     * @apiSuccess {Object}   res      TimeInterval
-     *
-     * @apiSuccessExample {json} Response Example
-     *  HTTP/1.1 200 OK
-     *  {
-     *    "res": {
-     *      "id":1,
-     *      "task_id":1,
-     *      "start_at":"2018-10-03 10:00:00",
-     *      "end_at":"2018-10-03 10:00:00",
-     *      "created_at":"2018-10-15 05:50:39",
-     *      "updated_at":"2018-10-15 05:50:43",
-     *      "deleted_at":null,
-     *      "activity_fill": 42,
-     *      "mouse_fill": 43,
-     *      "keyboard_fill": 43,
-     *      "user_id":1
-     *    }
-     *  }
-     *
-     * @apiUse          400Error
-     * @apiUse          ValidationError
-     * @apiUse          UnauthorizedError
-     * @apiUse          ItemNotFoundError
-     */
-
 
 
     /**
-     * @throws Throwable
-     * @api             {post} /time-intervals/remove Destroy
-     * @apiDescription  Destroy Time Interval
+     * Destroy
      *
-     * @apiVersion      4.0.0
-     * @apiName         Destroy
-     * @apiGroup        Time Interval
+     * Destroy Time Interval
      *
-     * @apiUse          AuthHeader
-     *
-     * @apiPermission   time_intervals_remove
-     * @apiPermission   time_intervals_full_access
-     *
-     * @apiParam {Integer}  id  ID of the target interval
-     *
-     * @apiParamExample {json} Request Example
-     * {
-     *   "id": 1
-     * }
-     *
-     * @apiSuccess {String}   message  Destroy status
-     *
-     * @apiSuccessExample {json} Response Example
-     *  HTTP/1.1 204 No Content
-     *  {
-     *  }
-     *
-     * @apiUse          400Error
-     * @apiUse          ValidationError
-     * @apiUse          ForbiddenError
-     * @apiUse          UnauthorizedError
+     * Required permission (any of): `time_intervals_remove`, `time_intervals_full_access`
      */
     public function destroy(DestroyTimeIntervalRequest $request): JsonResponse
     {
@@ -267,61 +137,9 @@ class IntervalController extends ItemController
     }
 
     /**
-     * @param BulkEditTimeIntervalRequest $request
+     * Bulk Edit
      *
-     * @return JsonResponse
-     * @throws Exception
-     */
-    /**
-     * @api             {post} /time-intervals/bulk-edit Bulk Edit
-     * @apiDescription  Multiple Edit TimeInterval to assign tasks to them
-     *
-     * @apiVersion      4.0.0
-     * @apiName         Bulk Edit
-     * @apiGroup        Time Interval
-     *
-     * @apiUse          AuthHeader
-     *
-     * @apiParam {Object[]}  intervals          Time Intervals to edit
-     * @apiParam {Integer}   intervals.id       Time Interval ID
-     * @apiParam {Integer}   intervals.task_id  Task ID
-     *
-     * @apiParamExample {json} Request Example
-     * {
-     *   "intervals": [
-     *     {
-     *       "id": 12,
-     *       "task_id": 12
-     *     },
-     *     {
-     *       "id": 13,
-     *       "task_id": 16
-     *     }
-     *   ]
-     * }
-     *
-     *
-     * @apiSuccessExample {json} Response Example
-     *  HTTP/1.1 204 No Content
-     *  {
-     *  }
-     *
-     * @apiSuccess {String}     message    Message from server
-     * @apiSuccess {Integer[]}  updated    Updated intervals
-     * @apiSuccess {Integer[]}  not_found  Not found intervals
-     *
-     * @apiSuccessExample {json} Not all intervals updated Response Example
-     *  HTTP/1.1 207 Multi-Status
-     *  {
-     *    "message": "Some intervals have not been updated",
-     *    "updated": [12, 123, 45],
-     *    "not_found": [154, 77, 66]
-     *  }
-     *
-     * @apiUse          400Error
-     * @apiUse          ValidationError
-     * @apiUse          UnauthorizedError
-     * @apiUse          ForbiddenError
+     * Multiple Edit TimeInterval to assign tasks to them
      */
     public function bulkEdit(BulkEditTimeIntervalRequest $request): JsonResponse
     {
@@ -358,48 +176,11 @@ class IntervalController extends ItemController
     }
 
     /**
-     * @throws Exception
-     * @api             {post} /time-intervals/bulk-remove Bulk Destroy
-     * @apiDescription  Multiple Destroy TimeInterval
+     * Bulk Destroy
      *
-     * @apiVersion      4.0.0
-     * @apiName         Bulk Destroy
-     * @apiGroup        Time Interval
+     * Multiple Destroy TimeInterval
      *
-     * @apiUse          AuthHeader
-     *
-     * @apiPermission   time_intervals_bulk_remove
-     * @apiPermission   time_intervals_full_access
-     *
-     * @apiParam {Integer[]}  intervals  Intervals ID to delete
-     *
-     * @apiParamExample {json} Request Example
-     * {
-     *   "intervals": [1]
-     * }
-     *
-     * @apiSuccess {String}     message    Message from server
-     * @apiSuccess {Integer[]}  removed    Removed intervals
-     * @apiSuccess {Integer[]}  not_found  Not found intervals
-     *
-     * @apiSuccessExample {json} Response Example
-     *  HTTP/1.1 204 No Content
-     *  {
-     *  }
-     *
-     * @apiSuccessExample {json} Not all intervals removed Response Example
-     *  HTTP/1.1 207 Multi-Status
-     *  {
-     *    "message": "Some intervals have not been removed",
-     *    "removed": [12, 123, 45],
-     *    "not_found": [154, 77, 66]
-     *  }
-     *
-     * @apiUse          400Error
-     * @apiUse          ValidationError
-     * @apiUse          ForbiddenError
-     * @apiUse          UnauthorizedError
-     *
+     * Required permission (any of): `time_intervals_bulk_remove`, `time_intervals_full_access`
      */
     public function bulkDestroy(BulkDestroyTimeIntervalRequest $request): JsonResponse
     {
@@ -418,43 +199,7 @@ class IntervalController extends ItemController
         return responder()->success()->respond(204);
     }
     /**
-     * @api             {put} /time-intervals/app Adds the current user’s ID
-     * @apiDescription  Adds the current user’s ID
-     *
-     * @apiVersion      4.0.0
-     * @apiName         Adds the current user’s ID
-     * @apiGroup        Time Interval
-     *
-     * @apiUse          AuthHeader
-     *
-     * @apiParam {Integer[]}  intervals  Intervals ID to delete
-     *
-     * @apiParamExample {json} Request Example
-     * {
-     *   "executable":  "1"
-     * }
-     *
-     * @apiSuccess {String}     executable  Indicates if the interval is executable.
-     * @apiSuccess {Integer[]}  user_id     ID of the user
-     * @apiSuccess {Integer[]}  updated_at  Last update timestamp
-     * @apiSuccess {Integer[]}  created_at  Creation timestamp
-     * @apiSuccess {Integer[]}  id          ID of the time interval
-     *
-     * @apiSuccessExample {json} Response Example
-     *  HTTP/1.1 200
-     *  {
-     *  "executable": "1",
-     *   "user_id": 1,
-     *   "updated_at": "2024-08-17T12:32:11.000000Z",
-     *   "created_at": "2024-08-17T12:32:11.000000Z",
-     *   "id": 1
-     *  }
-     *
-     * @apiUse          400Error
-     * @apiUse          ValidationError
-     * @apiUse          ForbiddenError
-     * @apiUse          UnauthorizedError
-     *
+     * Adds the current user’s ID
      */
     public function trackApp(TrackAppRequest $request): JsonResponse
     {
@@ -469,69 +214,16 @@ class IntervalController extends ItemController
     }
 
     /**
-     * @throws Throwable
-     * @api             {post} /time-intervals/create Create
-     * @apiDescription  Create Time Interval
+     * Create
      *
-     * @apiVersion      4.0.0
-     * @apiName         Create
-     * @apiGroup        Time Interval
+     * Create Time Interval
      *
-     * @apiUse          AuthHeader
+     * The interval is created together with its screenshot: if the screenshot cannot be stored, nothing is
+     * created and the request fails with a server error, so it can be retried as is. A failure to queue the
+     * follow-up jobs (thumbnail, apps) after the commit is reported but does not fail the request: the interval
+     * is already persisted and is returned.
      *
-     * @apiPermission   time_intervals_create
-     * @apiPermission   time_intervals_full_access
-     *
-     * @apiParam {Integer}  task_id           Task id
-     * @apiParam {Integer}  user_id           User id
-     * @apiParam {String}   start_at          Interval time start
-     * @apiParam {String}   end_at            Interval time end
-     * @apiParam {String}   timezone          Interval time end
-     * @apiParam {Boolean}  is_manual         Indicates whether the time was logged manually (true) or automatically
-     * @apiParam {File}     screenshot        Image
-     *
-     * @apiParamExample {json} Request Example
-     * {
-     *   "task_id": 59,
-     *   "user_id": 7,
-     *   "start_at": "2024-08-16T18:00:00.000Z",
-     *   "end_at": "2024-08-16T18:10:00.000Z",
-     *   "timezone": "Asia/Omsk",
-     *   "is_manual": true
-     * }
-     *
-     * @apiSuccess {Object}   interval  Interval
-     *
-     * @apiUse          TimeIntervalObject
-     *
-     * @apiSuccess {Integer}  id             ID of the time interval
-     * @apiSuccess {Integer}  task_id        ID of the task
-     * @apiSuccess {Integer}  user_id        ID of the user
-     * @apiSuccess {String}   start_at       Start timestamp of the time interval
-     * @apiSuccess {String}   end_at         End timestamp of the time interval
-     * @apiSuccess {String}   created_at     Creation timestamp
-     * @apiSuccess {String}   updated_at     Last update timestamp
-     * @apiSuccess {Boolean}  is_manual      Indicates whether the time was logged manually (true) or automatically
-     * @apiSuccess {Integer}  has_screenshot Indicates if there is a screenshot for this interval
-     *
-     * @apiSuccessExample {json} Response Example
-     *  HTTP/1.1 200 OK
-     *  {
-     *   "id": 22578,
-     *   "task_id": 59,
-     *   "user_id": 7,
-     *   "start_at": "2024-08-16T18:00:00.000000Z",
-     *   "end_at": "2024-08-16T18:10:00.000000Z",
-     *   "created_at": "2024-08-16T20:07:14.000000Z",
-     *   "updated_at": "2024-08-16T20:07:14.000000Z",
-     *   "is_manual": true,
-     *   "has_screenshot": true
-     * }
-     *
-     * @apiUse          400Error
-     * @apiUse          ValidationError
-     * @apiUse          UnauthorizedError
-     * @apiUse          ForbiddenError
+     * Required permission (any of): `time_intervals_create`, `time_intervals_full_access`
      */
     public function create(CreateTimeIntervalRequest $request): JsonResponse
     {
@@ -550,19 +242,21 @@ class IntervalController extends ItemController
         $screenshotService = $this->screenshotService;
 
         if ($request->hasFile('screenshot') && optional($request->file('screenshot'))->isValid()) {
-            $path = $request->file('screenshot')->store('tmp');
+            // The listener runs synchronously within this request, so the upload is read straight from PHP's
+            // temporary file: nothing is copied to storage/app/tmp and nothing is left behind when the screenshot
+            // is not kept or the interval is not created. The encoded screenshot goes to the default disk.
+            $screenshot = $request->file('screenshot');
 
             CatEvent::listen(
                 Filter::getAfterActionEventName(),
-                static function (TimeInterval $interval) use ($path, $screenshotService) {
+                static function (TimeInterval $interval) use ($screenshot, $screenshotService) {
                     $projScreenshotsState = $interval->task->project->screenshots_state;
                     $mustCapture = $projScreenshotsState === ScreenshotsState::REQUIRED;
                     $optionalCapture = $projScreenshotsState === ScreenshotsState::OPTIONAL;
                     if ($mustCapture
                         || ($optionalCapture && $interval->user->screenshots_state === ScreenshotsState::REQUIRED)
                     ) {
-                        $screenshotService->saveScreenshot(Storage::path($path), $interval);
-                        dispatch(static fn() => Storage::delete($path))->delay(now()->addMinute());
+                        $screenshotService->saveScreenshot($screenshot, $interval);
                     }
                 }
             );
@@ -572,41 +266,92 @@ class IntervalController extends ItemController
             Filter::getAfterActionEventName(),
             static function ($data) {
                 if (User::find($data['user_id'])->web_and_app_monitoring) {
-                    AssignAppsToTimeInterval::dispatch($data);
+                    // After commit the interval is persisted: a failed dispatch is reported, not thrown, or the
+                    // client's retry would duplicate the interval
+                    DB::afterCommit(static function () use ($data) {
+                        try {
+                            AssignAppsToTimeInterval::dispatch($data);
+                        } catch (Throwable $e) {
+                            // Reporting itself may fail (e.g. unwritable log); that must not escape after the commit either
+                            rescue(static fn () => report($e), report: false);
+                        }
+                    });
                 }
             }
         );
 
-        return $this->_create($request);
+        // The interval, its screenshot and the jobs queued for it are one unit: when the screenshot cannot be
+        // written the interval is rolled back (and the jobs are not queued), so the client can safely retry.
+        return DB::transaction(fn () => $this->_create($request));
     }
 
-    public function showScreenshot(ScreenshotRequest $request, TimeInterval $interval): BinaryFileResponse
+    /**
+     * Screenshot
+     *
+     * Stream the screenshot of an interval. Not authenticated: access is granted by the
+     * temporary signature (10 min) of the URL from `screenshot_url` or `screenshot-urls`.
+     * Used only with the local disk; on S3 the URLs point to the bucket directly.
+     */
+    public function showScreenshot(Request $request, int $interval): StreamedResponse
     {
-        $path = $this->screenshotService->getScreenshotPath($interval);
-        if (!Storage::exists($path)) {
-            abort(404);
-        }
-
-        $fullPath = Storage::path($path);
-
-        return response()->file($fullPath);
+        return $this->streamScreenshot($request, $this->screenshotService->getScreenshotPath($interval));
     }
 
-    public function showThumbnail(ScreenshotRequest $request, TimeInterval $interval): BinaryFileResponse
+    /**
+     * Thumbnail
+     *
+     * Stream the screenshot thumbnail of an interval, see Screenshot.
+     */
+    public function showThumbnail(Request $request, int $interval): StreamedResponse
     {
-        $path = $this->screenshotService->getThumbPath($interval);
-        if (!Storage::exists($path)) {
-            abort(404);
-        }
-
-        $fullPath = Storage::path($path);
-
-        return response()->file($fullPath);
+        return $this->streamScreenshot($request, $this->screenshotService->getThumbPath($interval));
     }
 
-    public function putScreenshot(PutScreenshotRequest $request, TimeInterval $interval): JsonResponse
+    /**
+     * @throws Throwable
+     */
+    private function streamScreenshot(Request $request, string $path): StreamedResponse
+    {
+        // Checked here rather than by the "signed" middleware: its InvalidSignatureException renders as 500
+        throw_unless(
+            $request->hasValidSignature(absolute: false),
+            new AuthorizationException(AuthorizationException::ERROR_TYPE_FORBIDDEN)
+        );
+        abort_unless(Storage::exists($path), 404);
+
+        return Storage::response($path, headers: [
+            'Content-Type' => 'image/jpeg',
+            'Cache-Control' => 'private, max-age=' . ScreenshotService::URL_TTL_MINUTES * 60,
+        ]);
+    }
+
+    /**
+     * Screenshot URLs
+     *
+     * Fresh temporary URLs of the interval screenshot and thumbnail
+     * (for pages open longer than the URL lifetime and for report payloads without URLs)
+     */
+    public function screenshotUrls(ScreenshotRequest $request, TimeInterval $interval): JsonResponse
+    {
+        return responder()->success($this->screenshotService->getTemporaryUrls($interval))->respond();
+    }
+
+    /**
+     * Upload a screenshot of an interval
+     *
+     * Saves the image from the `screenshot` field (`multipart/form-data`) as the screenshot of an existing time
+     * interval. The image is stored as JPEG and its thumbnail is generated in the background.
+     *
+     * Allowed to the users who may create the interval: administrators, the interval owner (with the user or manager
+     * role in the project, or assigned to the task) and managers for the intervals of other users.
+     *
+     * Responds with 409 if the interval already has a screenshot or if screenshots are not allowed for it: they are
+     * disabled for the project of the interval, or optional for the project and not required for the user.
+     */
+    public function putScreenshot(PutScreenshotRequest $request): JsonResponse
     {
         $data = $request->validated();
+        $interval = $request->timeInterval();
 
         abort_if(
             Storage::exists($this->screenshotService->getScreenshotPath($interval)),
@@ -631,6 +376,27 @@ class IntervalController extends ItemController
         return responder()->success()->respond(204);
     }
 
+    /**
+     * Upload offline intervals
+     *
+     * Imports the intervals recorded while the desktop application was offline. The `file` field
+     * (`multipart/form-data`) is a ZIP archive named `*.cattr`, up to 12 MB, with two entries: `Intervals`
+     * (MessagePack list of intervals) and `EncryptedDigest` (SHA-256 digest of `Intervals`, encrypted with the key
+     * from `GET /offline-sync/public-key`).
+     *
+     * An archive that cannot be opened or read, with a digest mismatch, without intervals or for an unknown user is
+     * rejected with 400. Otherwise the response is 200 and reports each interval separately: an interval is added only
+     * if it passes the same validation as `POST /time-intervals/create` and the current user may create it,
+     * for the rest `message` explains why (a text or validation messages per field).
+     *
+     * Any authenticated user may call it.
+     *
+     * @response array{status: int, success: true, data: list<array{
+     *     interval: array<string, mixed>,
+     *     message: string|array<string, list<string>>,
+     *     success: bool,
+     * }>}
+     */
     public function uploadOfflineIntervals(UploadOfflineIntervalsRequest $request): JsonResponse
     {
         /**
@@ -661,7 +427,11 @@ class IntervalController extends ItemController
             __('Unable to read content of Intervals or its EncryptedDigest')
         );
 
-        $digest = $privateKey->withPadding(RSA::ENCRYPTION_OAEP)->withHash('sha256')->decrypt($digestContent);
+        try {
+            $digest = $privateKey->withPadding(RSA::ENCRYPTION_OAEP)->withHash('sha256')->decrypt($digestContent);
+        } catch (BadDecryptionException | KeyConstraintException) {
+            $digest = false;
+        }
         $actualDigest = openssl_digest($intervalsContent, 'sha256');
 
         abort_if(
@@ -690,15 +460,22 @@ class IntervalController extends ItemController
             __('User not found')
         );
 
-        $canCreate = fn($interval) => $request->user()->can(
-            'create',
-            [
-                TimeInterval::class,
-                $interval['user_id'],
-                $interval['task_id'],
-                false,
-            ],
-        );
+        $canCreate = function ($interval) use ($request) {
+            try {
+                return $request->user()->can(
+                    'create',
+                    [
+                        TimeInterval::class,
+                        $interval['user_id'],
+                        $interval['task_id'],
+                        false,
+                    ],
+                );
+            } catch (ModelNotFoundException) {
+                // The policy cannot resolve the project of an unknown task: report this interval only
+                return false;
+            }
+        };
 
         $tasksScreenshotsState = Task::with('project:id,screenshots_state')
             ->whereIn('id', collect($intervals)->pluck('task_id'))
@@ -771,6 +548,30 @@ class IntervalController extends ItemController
         return responder()->success($creationResult)->respond();
     }
 
+    /**
+     * Upload offline screenshots
+     *
+     * Queues the screenshots recorded while the desktop application was offline for attaching to their intervals. The
+     * `file` field (`multipart/form-data`) is a ZIP archive named `*.cattr` with a flat list of files named
+     * `<user_id>_<screenshot_id>` (the screenshot ID is a UUID). An archive that exceeds the configured number of
+     * files or unpacked size, contains directories or duplicate names, or unpacks to more than the unpacked size, is
+     * rejected with 422; an archive that cannot be read, or a file with another name, with 400.
+     *
+     * A valid archive is stored on the default disk and processed by a queue worker: the response is 202 with the
+     * upload to poll with `GET /offline-sync/uploads/{id}` (a `private-offline-sync.{user_id}` broadcast event
+     * `offline-sync.upload` reports its progress as well). Each file is attached to the interval of that user with
+     * that `screenshot_id`, if the current user may create such an interval.
+     *
+     * Any authenticated user may call it.
+     *
+     * @response 202 array{status: int, success: true, data: array{
+     *     id: int,
+     *     status: 'pending'|'processing'|'completed'|'failed',
+     *     total: int,
+     *     processed: int,
+     *     results: list<array{}>,
+     * }}
+     */
     public function uploadOfflineScreenshots(UploadOfflineScreenshotsRequest $request): JsonResponse
     {
         /**
@@ -778,111 +579,103 @@ class IntervalController extends ItemController
          */
         $file = $request->validated()['file'];
 
-        $zip = new ZipArchive;
-        $zipOpenResult = $zip->open($file->path());
-        abort_if(
-            $zipOpenResult === false || (is_int($zipOpenResult) && $zipOpenResult > 0),
-            400,
-            __('Cannot open file.' . is_int($zipOpenResult) ? " ZipArchive error code: $zipOpenResult" : ""),
-        );
-
-        $temporaryDirectory = (new TemporaryDirectory())
-            ->location(Storage::disk('local')->path('tmp'))->force()->create();
-        $zip->extractTo($temporaryDirectory->path());
-        $zip->close();
-
-        $dirPath = Str::of($temporaryDirectory->path())->match('/tmp.+/');
-        dispatch(static fn() => $temporaryDirectory->delete())->delay(now()->addHour());
-
-
-        $allScreenshots = Storage::disk('local')->files($dirPath);
-
-        $creationResult = [];
-
-        $screenshotService = $this->screenshotService;
-        foreach ($allScreenshots as $screenshotPath) {
-            $pathArr = Str::of($screenshotPath)->match('/\d_.+/')->split('/_/');
-            abort_if(
-                count($pathArr) !== 2 || (count($pathArr) === 2 && !Str::isUuid($pathArr[1])),
-                400,
-                __('Wrong screenshot file name')
-            );
-
-            [$userId, $screenshotId] = $pathArr;
-
-            $interval = TimeInterval::where('user_id', $userId)->where('screenshot_id', $screenshotId)->first();
-            if ($interval === null) {
-                $creationResult[] = [
-                    'interval' => $interval,
-                    'user_id' => $userId,
-                    'screenshot_id' => $screenshotId,
-                    'message' => __('validation.offline-sync.cannot_find_interval'),
-                    'success' => false
-                ];
-                continue;
-            }
-            try {
-                dispatch(static function () use ($screenshotService, $interval, $screenshotPath) {
-                    $screenshotService->saveScreenshot(Storage::path($screenshotPath), $interval);
-                    $interval->screenshot_id = null;
-                    $interval->save();
-                });
-                $creationResult[] = [
-                    'interval' => $interval,
-                    'user_id' => $userId,
-                    'screenshot_id' => $screenshotId,
-                    'message' => __('validation.offline-sync.screenshot_attached'),
-                    'success' => true
-                ];
-            } catch (\Exception $e) {
-                $creationResult[] = [
-                    'interval' => $interval,
-                    'user_id' => $userId,
-                    'screenshot_id' => $screenshotId,
-                    'message' => __('validation.offline-sync.screenshot_not_attached'),
-                    'success' => false
-                ];
-                \Log::error($e);
-            }
+        // Everything that can be checked without the interval data is checked before the archive is stored: the
+        // names and sizes in the headers, then the bytes the entries actually unpack to.
+        $archive = OfflineScreenshotsArchive::open($file->path());
+        try {
+            $archive->validate();
+            $archive->scan();
+            $total = $archive->count();
+        } finally {
+            $archive->close();
         }
 
-        return responder()->success($creationResult)->respond();
+        // The default disk is shared with the queue workers: the PVC or S3, unlike storage/app/tmp of this container
+        $diskName = config('filesystems.default');
+        $path = Storage::disk($diskName)->putFileAs(OfflineScreenshotUpload::ARCHIVE_DIRECTORY, $file, Str::uuid() . '.cattr');
+        if ($path === false) {
+            throw new RuntimeException('Unable to store the offline screenshots archive');
+        }
+
+        try {
+            $upload = OfflineScreenshotUpload::query()->create([
+                'user_id' => $request->user()->id,
+                'status' => OfflineScreenshotUploadStatus::PENDING,
+                'disk' => $diskName,
+                'path' => $path,
+                'total' => $total,
+            ]);
+
+            ProcessOfflineScreenshotsUpload::dispatch($upload);
+        } catch (Throwable $e) {
+            Storage::disk($diskName)->delete($path);
+            OfflineScreenshotUpload::query()->where('disk', $diskName)->where('path', $path)->delete();
+
+            throw $e;
+        }
+
+        return responder()->success($this->offlineScreenshotsUploadData($upload, collect()))
+            ->respond(Response::HTTP_ACCEPTED);
     }
 
     /**
-     * Display a total of time
-     * @param IntervalTotalRequest $request
-     * @return JsonResponse
-     * @throws Exception
+     * Offline screenshots upload
+     *
+     * The status, progress and per-screenshot results of an upload from `POST /offline-sync/upload-screenshots`. The
+     * `results` are the files processed so far: `interval` is `null` if no suitable interval was found.
+     *
+     * Only the user who uploaded the archive may read it, for anyone else the upload does not exist (404).
+     *
+     * @urlParam id int required The upload ID. Example: 1
+     *
+     * @response array{status: int, success: true, data: array{
+     *     id: int,
+     *     status: 'pending'|'processing'|'completed'|'failed',
+     *     total: int,
+     *     processed: int,
+     *     results: list<array{
+     *         interval: \App\Models\TimeInterval|null,
+     *         user_id: int,
+     *         screenshot_id: string,
+     *         message: string,
+     *         success: bool,
+     *     }>,
+     * }}
      */
+    public function showOfflineScreenshotsUpload(ShowOfflineScreenshotsUploadRequest $request, int $id): JsonResponse
+    {
+        // Not found for anyone but the uploader, like a missing upload
+        $upload = OfflineScreenshotUpload::query()->where('user_id', $request->user()->id)->findOrFail($id);
+
+        $items = $upload->items()->with('interval')->orderBy('id')->get();
+
+        return responder()->success($this->offlineScreenshotsUploadData($upload, $items))->respond();
+    }
+
     /**
-     * @api             {any} /time/total Calculate total time interval
-     * @apiDescription  Calculate the total time spent within the specified start and end intervals for a given user.
+     * @param Collection<int, OfflineScreenshotUploadItem> $items
+     */
+    private function offlineScreenshotsUploadData(OfflineScreenshotUpload $upload, Collection $items): array
+    {
+        return [
+            'id' => $upload->id,
+            'status' => $upload->status->value,
+            'total' => $upload->total,
+            'processed' => $items->count(),
+            'results' => $items->map(static fn (OfflineScreenshotUploadItem $item) => [
+                'interval' => $item->interval,
+                'user_id' => $item->user_id,
+                'screenshot_id' => $item->screenshot_id,
+                'message' => __($item->message),
+                'success' => $item->success,
+            ])->all(),
+        ];
+    }
+
+    /**
+     * Calculate total time interval
      *
-     * @apiVersion      4.0.0
-     * @apiName         CalculateTotalTime
-     * @apiGroup        Time Interval
-     *
-     * @apiUse          AuthHeader
-     * @apiUse ParamTimeInterval
-     *
-     * @apiSuccess {Integer}  time  Total time in seconds calculated between the intervals.
-     * @apiSuccess {String}   start The earliest start datetime.
-     * @apiSuccess {String}   end   The latest end datetime.
-     *
-     * @apiSuccessExample {json} Response Example
-     *  HTTP/1.1 200 OK
-     *  {
-     *      "time": 1200,
-     *      "start": "2024-08-16 18:00:00",
-     *      "end": "2024-08-17 11:10:00"
-     *  }
-     *
-     * @apiUse          400Error
-     * @apiUse          ValidationError
-     * @apiUse          ForbiddenError
-     * @apiUse          UnauthorizedError
-     *
+     * Calculate the total time spent within the specified start and end intervals for a given user.
      */
 
     public function total(IntervalTotalRequest $request): JsonResponse
@@ -910,7 +703,7 @@ class IntervalController extends ItemController
 
         CatEvent::dispatch(Filter::getAfterActionEventName(), [$timeIntervals, $filters]);
 
-        $totalTime = $timeIntervals->sum(static fn($el) => Carbon::parse($el->end_at)->diffInSeconds($el->start_at));
+        $totalTime = $timeIntervals->sum(static fn($el) => (int) Carbon::parse($el->end_at)->diffInSeconds($el->start_at, true));
 
         return responder()->success([
             'time' => $totalTime,
@@ -920,55 +713,10 @@ class IntervalController extends ItemController
     }
 
     /**
-     * @throws Exception
+     * Calculate total time interval
+     *
+     * Calculate the total time spent within the specified start and end intervals for a given user.
      */
-    /**
-    * @api             {any} /time/tasks Calculate total time interval
-    * @apiDescription  Calculate the total time spent within the specified start and end intervals for a given user.
-    *
-    * @apiVersion      4.0.0
-    * @apiName         CalculateTotalTime
-    * @apiGroup        Time Interval
-    *
-    * @apiUse          AuthHeader
-    *
-    * @apiUse ParamTimeInterval
-    *
-    * @apiSuccess {Integer}   tasks.id           The ID of the task.
-    * @apiSuccess {Integer}   tasks.user_id      The ID of the user.
-    * @apiSuccess {Integer}   tasks.project_id   The latest end datetime.
-    * @apiSuccess {Integer}   tasks.time         Total time in seconds calculated between the intervals.
-    * @apiSuccess {String}    tasks.start        The earliest start datetime.
-    * @apiSuccess {String}    tasks.end          The latest end datetime.
-    * @apiSuccess {Integer}   total.time         Total time in seconds calculated between the intervals.
-    * @apiSuccess {String}    total.start        The earliest start datetime.
-    * @apiSuccess {String}    total.end          The latest end datetime.
-    *
-    * @apiSuccessExample {json} Response Example
-    *  HTTP/1.1 200 OK
-    *  {
-    *   "tasks": [
-    *        {
-    *            "id": 59,
-    *            "user_id": 7,
-    *            "project_id": 2,
-    *            "time": 1200,
-    *            "start": "2024-08-16T18:00:00.000000Z",
-    *            "end": "2024-08-17T11:10:00.000000Z"
-    *        }
-    *    ],
-    *    "total": {
-    *        "time": 1200,
-    *        "start": "2024-08-16T18:00:00.000000Z",
-    *        "end": "2024-08-17T11:10:00.000000Z"
-    *    }
-    * }
-    * @apiUse          400Error
-    * @apiUse          ValidationError
-    * @apiUse          ForbiddenError
-    * @apiUse          UnauthorizedError
-    *
-    */
 
     public function tasks(IntervalTasksRequest $request): JsonResponse
     {
@@ -1010,7 +758,7 @@ class IntervalController extends ItemController
                 foreach ($taskIntervals as $userId => $userIntervals) {
                     $taskTime = 0;
                     foreach ($userIntervals as $interval) {
-                        $taskTime += Carbon::parse($interval->end_at)->diffInSeconds($interval->start_at);
+                        $taskTime += (int) Carbon::parse($interval->end_at)->diffInSeconds($interval->start_at, true);
                     }
 
                     $firstUserInterval = $userIntervals->first();

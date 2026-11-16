@@ -242,21 +242,6 @@
                                         },
                                         `7${this.$t('time.d')}`,
                                     ),
-                                    h(
-                                        'AtButton',
-                                        {
-                                            props: {
-                                                type: 'primary',
-                                                size: 'smaller',
-                                            },
-                                            on: {
-                                                click: async () => {
-                                                    await this.handleTmpUrlCreation(params.item.id, 60 * 60 * 24 * 14);
-                                                },
-                                            },
-                                        },
-                                        `14${this.$t('time.d')}`,
-                                    ),
                                 ]),
                             ],
                         );
@@ -283,7 +268,8 @@
         methods: {
             async handleTmpUrlCreation(attachmentUUID, seconds = null) {
                 const url = await this.taskService.generateAttachmentTmpUrl(attachmentUUID, seconds);
-                await this.setClipboard(window.location.origin + url);
+                // relative signed route on the local disk, absolute presigned URL on S3
+                await this.setClipboard(new URL(url, window.location.origin).href);
                 Vue.prototype.$Notify.success({
                     title: this.$i18n.t('attachments.tmp_url_created'),
                     message: this.$i18n.t('attachments.copied_to_clipboard'),
@@ -366,28 +352,26 @@
         gap: 0.5rem;
     }
 
-    ::v-deep {
-        .tmp-link-popover {
-            display: flex;
-            gap: 0.1rem;
+    :deep(.tmp-link-popover) {
+        display: flex;
+        gap: 0.1rem;
+    }
+    :deep(.strikethrough) {
+        text-decoration: line-through;
+    }
+    :deep(.status-icon) {
+        font-size: 1rem;
+        &.icon-check-circle {
+            color: $color-success;
         }
-        .strikethrough {
-            text-decoration: line-through;
+        &.icon-slash {
+            color: $color-error;
         }
-        .status-icon {
-            font-size: 1rem;
-            &.icon-check-circle {
-                color: $color-success;
-            }
-            &.icon-slash {
-                color: $color-error;
-            }
-            &.icon-alert-circle {
-                color: $color-info;
-            }
-            &.icon-cpu {
-                color: $color-warning;
-            }
+        &.icon-alert-circle {
+            color: $color-info;
+        }
+        &.icon-cpu {
+            color: $color-warning;
         }
     }
     .upload-failed {
@@ -396,12 +380,12 @@
     .file-upload-progress {
         margin-top: 0.5rem;
         font-size: 0.8rem;
-        &::v-deep .at-progress {
+        & :deep(.at-progress) {
             display: flex;
             align-items: end;
-            &-bar {
-                flex-basis: 40%;
-            }
+        }
+        & :deep(.at-progress-bar) {
+            flex-basis: 40%;
         }
     }
 </style>

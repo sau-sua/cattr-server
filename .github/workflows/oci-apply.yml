@@ -1,0 +1,30 @@
+name: OCI Resource Manager apply
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions: { }
+
+concurrency:
+  group: oci-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    env:
+      OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+      OCI_CLI_REGION: ap-tokyo-1
+    steps:
+      - name: Create apply job
+        uses: oracle-actions/run-oci-cli-command@368cc7991534d1b8074846d10e1d84ac4c0d1a28  # v1.3.2
+        with:
+          command: >-
+            resource-manager job create-apply-job
+            --stack-id ${{ secrets.OCI_STACK_OCID }}
+            --execution-plan-strategy AUTO_APPROVED

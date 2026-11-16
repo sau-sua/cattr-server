@@ -1,0 +1,18 @@
+# Trivy ignore file for the "Trivy config" PR check (.github/workflows/pr-checks.yml).
+#
+# Every entry below is the pre-existing baseline found on main when the check
+# was introduced (issue #339). Ignores are scoped to the file they were found
+# in, so the same problem in a new file still fails the check. Remove entries
+# as the underlying files are fixed.
+
+misconfigurations:
+  # --- Helm chart --------------------------------------------------------------
+
+  # Trivy's built-in trusted-registry list does not include the chart's
+  # registries (ghcr.io for Cattr, docker.io for the demo MySQL); policy
+  # choice, not a misconfiguration. Images are pinned by tag (optional digest).
+  - id: KSV-0125
+    paths:
+      - .helm/templates/deployment.yaml
+      - .helm/templates/mysql-deployment.yaml
+    statement: Registry not in Trivy's trusted list (policy, not a defect)

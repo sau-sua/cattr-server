@@ -2,15 +2,14 @@
     <div class="screenshot" @click="$emit('click', $event)">
         <AppImage
             v-if="screenshotsEnabled"
-            :is-blob="true"
-            :src="getThumbnailPath(interval)"
+            :resolver="thumbnailResolver"
             class="screenshot__image"
             :lazy="lazyImage"
             @click="onShow"
         />
         <i v-else class="icon icon-camera-off screenshot__image" />
         <at-tooltip>
-            <template slot="content">
+            <template #content>
                 <div v-if="interval.activity_fill === null" class="screenshot__activity">
                     {{ $t('tooltip.activity_progress.not_tracked') }}
                 </div>
@@ -73,9 +72,13 @@
     import AppImage from './AppImage';
     import ScreenshotModal from './ScreenshotModal';
     import { mapGetters } from 'vuex';
+    import { getScreenshotUrl } from '@/services/screenshot-url.service';
 
+    /**
+     * Resolves the thumbnail URL of an interval (Promise<string>); modules may override it via `config`.
+     */
     export function thumbnailPathProvider(interval) {
-        return `time-intervals/${interval.id}/thumb`;
+        return getScreenshotUrl(interval, true);
     }
 
     export const config = { thumbnailPathProvider };
@@ -129,6 +132,10 @@
         computed: {
             ...mapGetters('user', ['companyData']),
             ...mapGetters('screenshots', { screenshotsEnabled: 'enabled' }),
+            thumbnailResolver() {
+                const interval = this.interval;
+                return () => config.thumbnailPathProvider(interval);
+            },
             screenshotTime() {
                 const timezone = this.timezone || this.companyData['timezone'];
 
@@ -160,9 +167,6 @@
                 this.onHide();
                 this.$emit('remove', this.interval);
             },
-            getThumbnailPath(interval) {
-                return config.thumbnailPathProvider(interval);
-            },
         },
     };
 </script>
@@ -176,12 +180,12 @@
             line-height: 0;
             overflow: hidden;
 
-            &::v-deep {
-                .pu-skeleton {
+            & {
+                :deep(.pu-skeleton) {
                     height: 100px;
                 }
 
-                img {
+                :deep(img) {
                     height: 150px;
                 }
             }
@@ -217,16 +221,15 @@
             white-space: nowrap;
         }
 
-        &::v-deep {
-            .at-tooltip {
+        & {
+            :deep(.at-tooltip) {
                 width: 100%;
-
-                &__trigger {
-                    width: 100%;
-                }
+            }
+            :deep(.at-tooltip__trigger) {
+                width: 100%;
             }
 
-            .at-progress__text {
+            :deep(.at-progress__text) {
                 display: none;
             }
         }

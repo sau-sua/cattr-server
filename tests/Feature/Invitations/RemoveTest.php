@@ -38,8 +38,8 @@ class RemoveTest extends TestCase
     {
         $response = $this->actingAs($this->admin)->postJson(self::URI, $this->invitation->only('id'));
 
-        $response->assertOk();
-        $this->assertDeleted((new Invitation)->getTable(), $this->invitation->only('id'));
+        $response->assertNoContent();
+        $this->assertDatabaseMissing((new Invitation)->getTable(), $this->invitation->only('id'));
     }
 
     public function test_remove_as_manager(): void
@@ -58,7 +58,7 @@ class RemoveTest extends TestCase
 
     public function test_not_existing(): void
     {
-        $response = $this->actingAs($this->admin)->postJson(self::URI, ['id' => $this->faker->randomNumber()]);
+        $response = $this->actingAs($this->admin)->postJson(self::URI, ['id' => Invitation::withoutGlobalScopes()->max('id') + 1]);
 
         $response->assertValidationError();
     }

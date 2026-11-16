@@ -34,6 +34,9 @@ class ListTest extends TestCase
     {
         parent::setUp();
 
+        // These tests compare complete visible project lists, not a paginated page.
+        $this->withHeader('X-Paginate', 'false');
+
         $this->admin = UserFactory::refresh()->asAdmin()->withTokens()->create();
         $this->manager = UserFactory::refresh()->asManager()->withTokens()->create();
         $this->auditor = UserFactory::refresh()->asAuditor()->withTokens()->create();
@@ -56,7 +59,7 @@ class ListTest extends TestCase
         $response = $this->actingAs($this->admin)->getJson(self::URI);
 
         $response->assertOk();
-        $response->assertJson(Project::all()->toArray());
+        $this->assertEqualsCanonicalizing(Project::all()->pluck('id')->all(), collect($response->json('data'))->pluck('id')->all());
     }
 
     public function test_list_as_manager(): void
@@ -64,7 +67,7 @@ class ListTest extends TestCase
         $response = $this->actingAs($this->manager)->getJson(self::URI);
 
         $response->assertOk();
-        $response->assertJson(Project::all()->toArray());
+        $this->assertEqualsCanonicalizing(Project::all()->pluck('id')->all(), collect($response->json('data'))->pluck('id')->all());
     }
 
     public function test_list_as_auditor(): void
@@ -72,7 +75,7 @@ class ListTest extends TestCase
         $response = $this->actingAs($this->auditor)->getJson(self::URI);
 
         $response->assertOk();
-        $response->assertJson(Project::all()->toArray());
+        $this->assertEqualsCanonicalizing(Project::all()->pluck('id')->all(), collect($response->json('data'))->pluck('id')->all());
     }
 
     public function test_list_as_user(): void
@@ -88,7 +91,7 @@ class ListTest extends TestCase
         $response = $this->actingAs($this->projectManager)->getJson(self::URI);
 
         $response->assertOk();
-        $response->assertExactJson([Project::first()->toArray()]);
+        $this->assertSame([Project::first()->id], collect($response->json('data'))->pluck('id')->all());
     }
 
     public function test_list_as_project_auditor(): void
@@ -96,7 +99,7 @@ class ListTest extends TestCase
         $response = $this->actingAs($this->projectAuditor)->getJson(self::URI);
 
         $response->assertOk();
-        $response->assertExactJson([Project::first()->toArray()]);
+        $this->assertSame([Project::first()->id], collect($response->json('data'))->pluck('id')->all());
     }
 
     public function test_list_as_project_user(): void
@@ -104,7 +107,7 @@ class ListTest extends TestCase
         $response = $this->actingAs($this->projectUser)->getJson(self::URI);
 
         $response->assertOk();
-        $response->assertExactJson([Project::first()->toArray()]);
+        $this->assertSame([Project::first()->id], collect($response->json('data'))->pluck('id')->all());
     }
 
     public function test_unauthorized(): void

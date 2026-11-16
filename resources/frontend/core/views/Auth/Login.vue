@@ -21,15 +21,14 @@
 
                         <component :is="config.authInput" @change="change" @submit="submit" />
 
-                        <vue-recaptcha
+                        <recaptcha
                             v-if="recaptchaKey"
                             ref="recaptcha"
-                            :loadRecaptchaScript="true"
                             :sitekey="recaptchaKey"
                             class="recaptcha"
                             @verify="onCaptchaVerify"
                             @expired="onCaptchaExpired"
-                        ></vue-recaptcha>
+                        ></recaptcha>
                     </div>
                     <at-button
                         class="login__btn"
@@ -51,19 +50,21 @@
 
 <script>
     import { ValidationObserver } from 'vee-validate';
-    import { VueRecaptcha } from 'vue-recaptcha';
+    import Recaptcha from '@/components/Recaptcha';
     import AuthInput from './AuthInput';
     import sloganGenerator from '@/helpers/sloganGenerator';
     import has from 'lodash/has';
 
-    export const config = { authInput: AuthInput };
+    // authInput: component of the credentials form; loginEndpoint: API endpoint the credentials are posted to.
+    // A module can replace both, e.g. with a demo account selector and its own passwordless login endpoint.
+    export const config = { authInput: AuthInput, loginEndpoint: '/auth/login' };
 
     export default {
         name: 'Login',
 
         components: {
             ValidationObserver,
-            VueRecaptcha,
+            Recaptcha,
             AuthInput,
         },
 
@@ -107,6 +108,7 @@
             },
 
             onCaptchaExpired() {
+                this.user.recaptcha = null;
                 this.$refs.recaptcha.reset();
             },
 
@@ -123,19 +125,28 @@
                 this.$Loading.start();
                 this.isLoading = true;
                 const apiService = this.$store.getters['user/apiService'];
+                let submittedRecaptcha = null;
 
                 try {
-                    if ('grecaptcha' in window) {
+                    // The widget exists only while a recaptcha key is set; grecaptcha may stay loaded from an
+                    // earlier visit of this page in the same tab.
+                    if (this.$refs.recaptcha) {
                         this.$refs.recaptcha.reset();
                     }
 
-                    await apiService.attemptLogin(this.user);
+                    submittedRecaptcha = this.user.recaptcha;
+                    await apiService.attemptLogin(this.user, config.loginEndpoint);
                     await apiService.getCompanyData();
 
                     this.error = null;
                     this.$Loading.finish();
                 } catch (e) {
                     this.$Loading.error();
+
+                    // the submitted token is consumed; keep a newer one solved while the request was in flight
+                    if (submittedRecaptcha && this.user.recaptcha === submittedRecaptcha) {
+                        this.user.recaptcha = null;
+                    }
 
                     if (has(e, 'response.status')) {
                         if (e.response.status === 429 && this.recaptchaKey === null) {
@@ -256,7 +267,7 @@
             text-align: center;
         }
 
-        ::v-deep .input-group {
+        :deep(.input-group) {
             margin-bottom: 0.75rem;
         }
 

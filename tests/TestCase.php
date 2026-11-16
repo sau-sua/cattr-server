@@ -6,6 +6,11 @@ use App\Models\User;
 use Illuminate\Contracts\Auth\Authenticatable as UserContract;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Routing\Events\RouteMatched;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Testing\LoggedExceptionCollection;
+use App\Events\ChangeEvent;
+use Settings;
 
 /**
  * @method TestResponse get($uri, array $headers = [])
@@ -22,8 +27,21 @@ use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
  */
 abstract class TestCase extends BaseTestCase
 {
-    use CreatesApplication;
     use DatabaseTransactions;
+
+    /** Whether requests of this test count as endpoint coverage, see scripts/route-coverage.php. */
+    protected bool $recordsRouteCoverage = true;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Settings::scope('core')->set('installed', true);
+
+        $this->recordRouteCoverage();
+
+        Event::fake([ChangeEvent::class]);
+    }
 
     public const HTTP_CONTINUE = 100;
     public const HTTP_SWITCHING_PROTOCOLS = 101;
@@ -89,6 +107,35 @@ abstract class TestCase extends BaseTestCase
     public const HTTP_NOT_EXTENDED = 510;
     public const HTTP_NETWORK_AUTHENTICATION_REQUIRED = 511;
 
+    /** Append every route matched during the test to the file named by ROUTE_COVERAGE_LOG. */
+    private function recordRouteCoverage(): void
+    {
+        $log = env('ROUTE_COVERAGE_LOG');
+
+        if (!$log || !$this->recordsRouteCoverage) {
+            return;
+        }
+
+        Event::listen(RouteMatched::class, static function (RouteMatched $event) use ($log): void {
+            $route = implode('|', $event->route->methods()) . ' ' . $event->route->uri();
+            file_put_contents($log, $route . PHP_EOL, FILE_APPEND | LOCK_EX);
+        });
+    }
+
+    /** Prefix legacy API paths (relative or absolute) with the API base path. */
+    protected function prepareUrlForRequest($uri)
+    {
+        if (is_string($uri) && $uri !== '' && !str_contains($uri, '://')) {
+            $path = ltrim($uri, '/');
+
+            if ($path !== '' && $path !== 'api' && !str_starts_with($path, 'api/')) {
+                $uri = '/api/'.$path;
+            }
+        }
+
+        return parent::prepareUrlForRequest($uri);
+    }
+
     public function actingAs($user, $driver = null, int $tokenOffset = 0): self
     {
         $token = '';
@@ -108,8 +155,14 @@ abstract class TestCase extends BaseTestCase
         return $this;
     }
 
-    protected function createTestResponse($response): TestResponse
+    protected function createTestResponse($response, $request): TestResponse
     {
-        return TestResponse::fromBaseResponse($response);
+        return tap(TestResponse::fromBaseResponse($response, $request), function (TestResponse $testResponse): void {
+            $testResponse->withExceptions(
+                $this->app->bound(LoggedExceptionCollection::class)
+                    ? $this->app->make(LoggedExceptionCollection::class)
+                    : new LoggedExceptionCollection()
+            );
+        });
     }
 }

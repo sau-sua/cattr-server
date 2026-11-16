@@ -3,7 +3,7 @@
 namespace Tests\Factories;
 
 use App\Models\Project;
-use Faker\Factory as FakerFactory;
+use App\Enums\ScreenshotsState;
 use Tests\Facades\TaskFactory;
 
 class ProjectFactory extends Factory
@@ -61,13 +61,14 @@ class ProjectFactory extends Factory
 
     public function createRandomModelData(): array
     {
-        $faker = FakerFactory::create();
+        $faker = fake();
 
         return [
             'company_id' => self::COMPANY_ID,
             'name' => $faker->company,
             'description' => $faker->text(self::DESCRIPTION_LENGTH),
             'source' => 'internal',
+            'screenshots_state' => ScreenshotsState::REQUIRED->value,
         ];
     }
 

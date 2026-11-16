@@ -10,7 +10,11 @@
 
                 <UserSelect class="controls-row__item" @change="onUsersChange" />
 
-                <ProjectSelect class="controls-row__item" @change="onProjectsChange" />
+                <ProjectSelect
+                    class="controls-row__item"
+                    :unfiltered-when-all-selected="user.role_id === 2"
+                    @change="onProjectsChange"
+                />
 
                 <TimezonePicker :value="timezone" class="controls-row__item" @onTimezoneChange="onTimezoneChange" />
             </div>
@@ -187,7 +191,7 @@
             }),
             load: throttle(async function (withLoadingIndicator = true) {
                 this.isDataLoading = withLoadingIndicator;
-                if (!this.userIDs.length || !this.projectIDs.length) {
+                if (!this.userIDs.length || (this.projectIDs !== null && !this.projectIDs.length)) {
                     this.isDataLoading = false;
 
                     return;
@@ -215,7 +219,7 @@
                 this.load();
             },
             onProjectsChange(projectIDs) {
-                this.projectIDs = [...projectIDs];
+                this.projectIDs = projectIDs === null ? null : [...projectIDs];
 
                 this.load();
             },
@@ -353,10 +357,10 @@
         z-index: 0;
         border-radius: 20px;
 
-        &::v-deep {
+        & {
             align-items: baseline;
 
-            .lds-ellipsis {
+            :deep(.lds-ellipsis) {
                 position: sticky;
                 top: 25px;
             }
@@ -399,7 +403,7 @@
                 margin-bottom: $spacing-03;
             }
             .calendar {
-                &::v-deep .input {
+                & :deep(.input) {
                     width: unset;
                 }
             }
@@ -430,7 +434,7 @@
 
         width: 40px;
 
-        &::v-deep .at-btn__text {
+        & :deep(.at-btn__text) {
             color: #2e2ef9;
             font-size: 25px;
         }

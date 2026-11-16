@@ -42,23 +42,16 @@ Route::group([
             ->name('auth.refresh');
         $router->get('me', [AuthController::class, 'me'])
             ->name('auth.me');
-        $router->post('password/reset/request', [PasswordResetController::class, 'request'])
-            ->name('auth.reset.request');
-        $router->post('password/reset/validate', [PasswordResetController::class, 'validate'])
-            ->name('auth.reset.validate');
-        $router->post('password/reset/process', [PasswordResetController::class, 'process'])
-            ->name('auth.reset.process');
-
-        $router->get('register/{key}', [RegistrationController::class, 'getForm'])
-            ->name('auth.register.form');
-        $router->post('register/{key}', [RegistrationController::class, 'postForm'])
-            ->name('auth.register.process');
 
         $router->get('desktop-key', [AuthController::class, 'issueDesktopKey'])
             ->name('auth.desktop.request');
     });
 
     $router->withoutMiddleware('auth:sanctum')->group(static function (Router $router) {
+        $router->get('register/{key}', [RegistrationController::class, 'getForm'])
+            ->name('auth.register.form');
+        $router->post('register/{key}', [RegistrationController::class, 'postForm'])
+            ->name('auth.register.process');
         $router->post('login', [AuthController::class, 'login'])
             ->name('auth.login');
         $router->post('password/reset/request', [PasswordResetController::class, 'request'])
@@ -225,8 +218,6 @@ Route::group([
             ->name('intervals.count');
         $router->post('time-intervals/create', [IntervalController::class, 'create'])
             ->name('intervals.create');
-        $router->post('time-intervals/edit', [IntervalController::class, 'edit'])
-            ->name('intervals.edit');
         $router->post('time-intervals/bulk-edit', [IntervalController::class, 'bulkEdit'])
             ->name('intervals.edit.bulk');
         $router->any('time-intervals/show', [IntervalController::class, 'show'])
@@ -247,6 +238,9 @@ Route::group([
             ->name('offline_sync.upload_intervals');
         $router->post('offline-sync/upload-screenshots', [IntervalController::class, 'uploadOfflineScreenshots'])
             ->name('offline_sync.upload_screenshots');
+        $router->get('offline-sync/uploads/{id}', [IntervalController::class, 'showOfflineScreenshotsUpload'])
+            ->where('id', '[0-9]+')
+            ->name('offline_sync.show_upload');
         $router->get('offline-sync/public-key', [CompanySettingsController::class, 'getOfflineSyncPublicKey'])
             ->name('offline_sync.public_key');
 
@@ -319,6 +313,14 @@ Route::group([
     });
 
     //Screenshots routes
+    $router->get('time-intervals/{interval}/screenshot-urls', [IntervalController::class, 'screenshotUrls'])
+        ->where('interval', '[0-9]+')->name('intervals.screenshot.urls');
+});
+
+// Screenshot files on the local disk: no bearer token, access is granted by a temporary signed URL
+// (ScreenshotService::getTemporaryUrl, relative signature checked in the controller).
+// Throttled per IP by the "screenshots" limiter (AppServiceProvider), sized for a full timeline page.
+Route::middleware('throttle:screenshots')->group(static function (Router $router) {
     $router->get('time-intervals/{interval}/screenshot', [IntervalController::class, 'showScreenshot'])
         ->where('interval', '[0-9]+')->name('intervals.screenshot.original');
     $router->get('time-intervals/{interval}/thumb', [IntervalController::class, 'showThumbnail'])

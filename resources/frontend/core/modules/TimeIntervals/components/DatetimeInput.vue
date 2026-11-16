@@ -128,7 +128,7 @@
                 ? moment(this.value).tz(this.timezone).toISOString()
                 : moment().startOf('day').toISOString();
             this.inputHandler(dateTimeStr);
-            this.$emit('change', dateTimeStr);
+            this.$emit('change', dateTimeStr, { source: 'init' });
             this.$nextTick(async () => {
                 try {
                     const locale = await import(`vue2-datepicker/locale/${this.$i18n.locale}`);
@@ -173,21 +173,21 @@
                 const dateTimeStr = dateTime.toISOString();
 
                 this.inputHandler(dateTimeStr);
-                this.$emit('change', dateTimeStr);
+                this.$emit('change', dateTimeStr, { source: 'user' });
             },
             setHour(value) {
                 const dateTime = moment(this.value).hour(value);
                 const dateTimeStr = dateTime.toISOString();
 
                 this.inputHandler(dateTimeStr);
-                this.$emit('change', dateTimeStr);
+                this.$emit('change', dateTimeStr, { source: 'user' });
             },
             setMinute(value) {
                 const dateTime = moment(this.value).minute(value);
                 const dateTimeStr = dateTime.toISOString();
 
                 this.inputHandler(dateTimeStr);
-                this.$emit('change', dateTimeStr);
+                this.$emit('change', dateTimeStr, { source: 'user' });
             },
             disabledDate(date) {
                 // date = js Date object in user timezone
@@ -216,7 +216,7 @@
 
                 moment.tz.setDefault(this.timezone);
                 this.inputHandler(dateTimeStr);
-                this.$emit('change', dateTimeStr);
+                this.$emit('change', dateTimeStr, { source: 'timezone' });
             },
         },
     };
@@ -249,30 +249,30 @@
         flex: 1;
     }
 
-    .datetimeinput::v-deep {
-        .mx-datepicker {
+    .datetimeinput {
+        :deep(.mx-datepicker) {
             max-height: unset;
         }
 
-        .mx-datepicker-main,
-        .mx-datepicker-inline {
+        :deep(.mx-datepicker-main),
+        :deep(.mx-datepicker-inline) {
             border: none;
         }
 
-        .mx-datepicker-header {
+        :deep(.mx-datepicker-header) {
             padding: 0;
             border-bottom: none;
         }
 
-        .mx-calendar {
+        :deep(.mx-calendar) {
             width: unset;
         }
 
-        .mx-calendar-content {
+        :deep(.mx-calendar-content) {
             width: unset;
         }
 
-        .mx-calendar-header {
+        :deep(.mx-calendar-header) {
             & > .mx-btn-text {
                 padding: 0;
                 width: 34px;
@@ -280,30 +280,30 @@
             }
         }
 
-        .mx-calendar-header-label .mx-btn {
+        :deep(.mx-calendar-header-label .mx-btn) {
             color: #1a051d;
         }
 
-        .mx-table thead {
+        :deep(.mx-table thead) {
             color: #b1b1be;
             font-weight: 600;
             text-transform: uppercase;
         }
 
-        .mx-week-number-header,
-        .mx-week-number {
+        :deep(.mx-week-number-header),
+        :deep(.mx-week-number) {
             display: none;
         }
 
-        .mx-table-date td {
+        :deep(.mx-table-date td) {
             font-size: 13px;
         }
 
-        .mx-table-date .cell:last-child {
+        :deep(.mx-table-date .cell:last-child) {
             color: #ff5569;
         }
 
-        .mx-table {
+        :deep(.mx-table) {
             .cell.not-current-month {
                 color: #e7ecf2;
             }
@@ -323,7 +323,7 @@
             }
         }
 
-        .mx-table-month {
+        :deep(.mx-table-month) {
             color: #000000;
 
             .cell {
@@ -337,7 +337,7 @@
             }
         }
 
-        .mx-table-year {
+        :deep(.mx-table-year) {
             color: #000000;
 
             .cell.active > div {
@@ -345,11 +345,11 @@
             }
         }
 
-        .mx-btn:hover {
+        :deep(.mx-btn:hover) {
             color: #2e2ef9;
         }
 
-        .mx-table .cell.today {
+        :deep(.mx-table .cell.today) {
             color: #2a90e9;
         }
     }

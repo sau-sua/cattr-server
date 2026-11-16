@@ -1,10 +1,12 @@
 <template>
     <at-collapse simple class="list">
         <at-collapse-item class="list__item">
-            <div slot="title" class="task-title">
-                {{ task?.task_name }}
-                <at-button v-if="task.task_name" class="icon" icon="icon-external-link" @click="redirectToTask" />
-            </div>
+            <template #title>
+                <div class="task-title">
+                    {{ task?.task_name }}
+                    <at-button v-if="task.task_name" class="icon" icon="icon-external-link" @click="redirectToTask" />
+                </div>
+            </template>
             <div>
                 <div class="data-entries">
                     <h3>{{ $t('universal-report.task_information') }}</h3>
@@ -75,7 +77,7 @@
 </template>
 
 <script>
-    import { Skeleton } from 'vue-loading-skeleton';
+    import Skeleton from '@/components/Skeleton';
 
     export default {
         methods: {

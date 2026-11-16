@@ -5,12 +5,11 @@ namespace Tests\Factories;
 use App\Enums\ScreenshotsState;
 use App\Models\User;
 use Carbon\Carbon;
-use Faker\Factory as FakerFactory;
 use Illuminate\Database\Eloquent\Model;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 class UserFactory extends Factory
 {
+    public const ADMIN_ROLE = 0;
     public const USER_ROLE = 2;
     public const MANAGER_ROLE = 1;
     public const AUDITOR_ROLE = 3;
@@ -19,7 +18,6 @@ class UserFactory extends Factory
     private ?int $roleId = null;
 
     private User $user;
-    private bool $isAdmin = false;
 
 
     protected function getModelInstance(): Model
@@ -31,16 +29,13 @@ class UserFactory extends Factory
     {
         $modelData = $this->createRandomModelData();
 
-        if ($this->isAdmin) {
-            $modelData['is_admin'] = true;
-        }
         $this->user = User::create($modelData);
 
         if ($this->tokensAmount) {
             $this->createTokens();
         }
 
-        if ($this->roleId) {
+        if ($this->roleId !== null) {
             $this->assignRole();
         }
 
@@ -56,7 +51,7 @@ class UserFactory extends Factory
 
     public function createRandomModelData(): array
     {
-        $faker = FakerFactory::create();
+        $faker = fake();
 
         $fullName = $faker->name;
 
@@ -84,7 +79,7 @@ class UserFactory extends Factory
 
     public function createRandomRegistrationModelData(): array
     {
-        $faker = FakerFactory::create();
+        $faker = fake();
 
         return [
             'full_name' => $faker->name,
@@ -109,8 +104,7 @@ class UserFactory extends Factory
 
     public function asAdmin(): self
     {
-        $this->roleId = self::USER_ROLE;
-        $this->isAdmin = true;
+        $this->roleId = self::ADMIN_ROLE;
         return $this;
     }
 
@@ -134,10 +128,14 @@ class UserFactory extends Factory
 
     protected function createTokens(): void
     {
-        $tokens = array_map(fn() => [
-            'token' => JWTAuth::fromUser($this->user),
-            'expires_at' => now()->addDay()
-        ], range(0, $this->tokensAmount));
+        $tokens = array_map(function () {
+            $expiresAt = now()->addDay();
+
+            return [
+                'token' => $this->user->createToken('testing-token', ['*'], $expiresAt)->plainTextToken,
+                'expires_at' => $expiresAt,
+            ];
+        }, range(1, $this->tokensAmount));
 
         cache(["testing:{$this->user->id}:tokens" => $tokens]);
     }

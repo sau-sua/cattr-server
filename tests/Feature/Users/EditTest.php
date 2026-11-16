@@ -6,7 +6,6 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\WithFaker;
 use Tests\Facades\UserFactory;
 use Tests\TestCase;
-use Faker\Factory as FakerFactory;
 
 class EditTest extends TestCase
 {
@@ -40,7 +39,8 @@ class EditTest extends TestCase
         $response = $this->actingAs($this->admin)->postJson(self::URI, $this->user->toArray());
 
         $response->assertOk();
-        $response->assertJson(['res' => $this->user->toArray()]);
+        $response->assertJsonPath('data.id', $this->user->id);
+        $response->assertJsonPath('data.full_name', $this->user->full_name);
         $this->assertDatabaseHas('users', $this->user->only('id', 'full_name'));
     }
 
@@ -48,7 +48,10 @@ class EditTest extends TestCase
     {
         $this->user->full_name = $this->faker->name;
 
-        $response = $this->actingAs($this->manager)->postJson(self::URI, $this->user->toArray());
+        $response = $this->actingAs($this->manager)->postJson(
+            self::URI,
+            $this->user->only('id', 'full_name')
+        );
 
         $response->assertForbidden();
     }
@@ -57,7 +60,10 @@ class EditTest extends TestCase
     {
         $this->user->full_name = $this->faker->name;
 
-        $response = $this->actingAs($this->auditor)->postJson(self::URI, $this->user->toArray());
+        $response = $this->actingAs($this->auditor)->postJson(
+            self::URI,
+            $this->user->only('id', 'full_name')
+        );
 
         $response->assertForbidden();
     }
@@ -73,7 +79,7 @@ class EditTest extends TestCase
 
     public function test_edit_as_your_own_user(): void
     {
-        $faker = FakerFactory::create();
+        $faker = fake();
         $user = clone $this->user;
 
         $user->full_name = $faker->unique()->firstName;
@@ -87,7 +93,9 @@ class EditTest extends TestCase
         );
 
         $response->assertOk();
-        $response->assertJson(['res' => $user->toArray()]);
+        $response->assertJsonPath('data.id', $user->id);
+        $response->assertJsonPath('data.full_name', $user->full_name);
+        $response->assertJsonPath('data.email', $user->email);
         $this->assertDatabaseHas(
             'users',
             $user->only('id', 'full_name', 'email', 'user_language')
@@ -114,7 +122,7 @@ class EditTest extends TestCase
 
         $response = $this->actingAs($this->admin)->postJson(self::URI, $this->user->toArray());
 
-        $response->assertNotFound();
+        $response->assertForbidden();
     }
 
 
@@ -129,6 +137,6 @@ class EditTest extends TestCase
     {
         $response = $this->actingAs($this->admin)->postJson(self::URI);
 
-        $response->assertValidationError();
+        $response->assertForbidden();
     }
 }

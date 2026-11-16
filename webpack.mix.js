@@ -17,8 +17,6 @@ if (mix.isWatching()) {
 process.env.MIX_APP_VERSION = process.env.APP_VERSION;
 process.env.MIX_DOCKER_VERSION = process.env.IMAGE_VERSION;
 process.env.MIX_REVERB_APP_KEY = process.env.REVERB_APP_KEY;
-process.env.MIX_REVERB_SCHEME = process.env.REVERB_SCHEME;
-process.env.MIX_SENTRY_DSN = process.env.SENTRY_DSN;
 
 mix.before(() => {
     compiler();
@@ -49,7 +47,7 @@ mix.before(() => {
     })
     .generateIntegrityHash()
     .generateSW({
-        swDest: 'sw.js',
+        swDest: 'service-worker.js',
     })
     .clean({
         cleanOnceBeforeBuildPatterns: ['**/*', '!index.php', '!robots.txt', '!vendor/**', '!favicon.ico', '!storage/**'],
@@ -57,6 +55,10 @@ mix.before(() => {
     .webpackConfig({
         output: {
             publicPath: '/',
+            // Lazy chunks are requested by the webpack runtime without the ?id= suffix of mix-manifest.json,
+            // so a CDN or browser could pair a cached chunk of an older build with a newer app.js.
+            // A content hash in the file name makes every build request its own chunk URLs.
+            chunkFilename: 'dist/app/[name].[contenthash:8].js',
         },
         resolve: {
             fallback: {

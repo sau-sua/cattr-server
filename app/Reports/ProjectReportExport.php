@@ -32,8 +32,7 @@ class ProjectReportExport extends AppReport implements FromCollection, WithMappi
         private readonly Carbon $startAt,
         private readonly Carbon $endAt,
         private readonly string $companyTimezone,
-    )
-    {
+    ) {
         $this->period = CarbonPeriod::create($this->startAt, $this->endAt);
     }
 
@@ -47,7 +46,8 @@ class ProjectReportExport extends AppReport implements FromCollection, WithMappi
             $interval->hour = $date->hour;
             $interval->day = $date->format('Y-m-d');
             $interval->minute = round($date->minute, -1);
-            $interval->duration = Carbon::make($interval->end_at)?->diffInSeconds(Carbon::make($interval->start_at));
+            $duration = Carbon::make($interval->end_at)?->diffInSeconds(Carbon::make($interval->start_at), true);
+            $interval->duration = $duration === null ? null : (int) $duration;
 
             $interval->durationByDay = ReportHelper::getIntervalDurationByDay($interval, $that->companyTimezone);
 
@@ -137,7 +137,7 @@ class ProjectReportExport extends AppReport implements FromCollection, WithMappi
 
     private function queryReport(): Collection
     {
-        return ReportHelper::getBaseQuery(
+        $query = ReportHelper::getBaseQuery(
             $this->users,
             $this->startAt,
             $this->endAt,
@@ -149,7 +149,13 @@ class ProjectReportExport extends AppReport implements FromCollection, WithMappi
                 'time_intervals.end_at',
                 'users.email as user_email',
             ]
-        )->whereIn('project_id', $this->projects)->get();
+        );
+
+        if ($this->projects !== null) {
+            $query->whereIn('projects.id', $this->projects);
+        }
+
+        return $query->get();
     }
 
     public function headings(): array

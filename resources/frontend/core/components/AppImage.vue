@@ -1,7 +1,11 @@
 <template>
     <div>
         <transition appear mode="out-in" name="fade">
-            <Skeleton v-if="!loaded" />
+            <!-- lazy mode: reserve the thumbnail box, so only images near the viewport get loaded -->
+            <div v-if="!loaded && lazy" class="app-image__placeholder">
+                <Skeleton height="100%" />
+            </div>
+            <Skeleton v-else-if="!loaded" />
             <template v-else>
                 <component :is="openable ? 'a' : 'div'" :href="url" target="_blank">
                     <svg
@@ -24,9 +28,9 @@
                             s10.22,2.32,13.6,6.38c1.65,1.97,4.7,2.42,6.87,0.63c2.07-1.73,2.34-4.8,0.63-6.87C155.85,94.35,148.17,90.76,140,90.76z"
                         />
                     </svg>
-                    <lazy-component v-else-if="lazy">
+                    <div v-else-if="lazy">
                         <img :src="url" alt="screenshot" @click="$emit('click', $event)" @error="handleError" />
-                    </lazy-component>
+                    </div>
                     <img v-else :src="url" alt="screenshot" @click="$emit('click', $event)" @error="handleError" />
                 </component>
             </template>
@@ -35,15 +39,22 @@
 </template>
 
 <script>
-    import axios from '@/config/app';
-    import { Skeleton } from 'vue-loading-skeleton';
+    import Skeleton from '@/components/Skeleton';
+    import { isUrlExpired } from '@/utils/screenshotUrl';
 
     export default {
         name: 'AppImage',
         props: {
+            // Ready URL for <img src>; "none" shows the error placeholder
             src: {
                 type: String,
-                required: true,
+                default: null,
+            },
+            // Async URL provider, used instead of src; called again once when a temporary URL has expired.
+            // With `lazy`, it is called only when the image comes near the viewport.
+            resolver: {
+                type: Function,
+                default: null,
             },
             lazy: {
                 type: Boolean,
@@ -55,81 +66,119 @@
             },
         },
         data() {
-            const baseUrl =
-                this.src.indexOf('http') === 0
-                    ? ''
-                    : (process.env.VUE_APP_API_URL !== 'null'
-                          ? process.env.VUE_APP_API_URL
-                          : `${window.location.origin}/api`) + '/';
-
-            const url = baseUrl + this.src;
-
             return {
-                error: this.src === 'none',
-                loaded: this.src === 'none',
-                url,
-                baseUrl,
+                error: false,
+                loaded: false,
+                url: null,
+                retried: false,
+                loadId: 0,
+                // lazy mode: the image has come near the viewport
+                visible: false,
             };
         },
         components: {
             Skeleton,
         },
         methods: {
-            load() {
-                if (this.error) return;
+            async load() {
+                const loadId = ++this.loadId;
 
-                if (this.src === 'none') {
-                    this.error = true;
+                this.error = false;
+                this.loaded = false;
+                this.url = null;
+
+                let url = null;
+                try {
+                    url = this.resolver ? await this.resolver() : this.src;
+                } catch (e) {
+                    url = null;
+                }
+
+                // a newer load (src / resolver changed) took over meanwhile
+                if (loadId !== this.loadId) {
                     return;
                 }
 
-                this.loaded = false;
-
-                if (this.url) {
-                    URL.revokeObjectURL(this.url);
-                    this.url = null;
+                if (!url || url === 'none') {
+                    this.error = true;
+                } else {
+                    this.url = url;
+                }
+                this.loaded = true;
+            },
+            reload() {
+                this.retried = false;
+                // lazy mode: the new source is loaded when the image becomes visible
+                if (this.lazy && !this.visible) {
+                    return;
+                }
+                this.load();
+            },
+            // Loads the image once it comes near the viewport (within 1.3 of its size, as vue-lazyload did)
+            observe() {
+                if (typeof IntersectionObserver === 'undefined') {
+                    this.visible = true;
+                    this.load();
+                    return;
                 }
 
-                if (this.src) {
-                    axios
-                        .get(this.src, {
-                            responseType: 'blob',
-                            muteError: true,
-                        })
-                        .then(({ data }) => {
-                            this.url = URL.createObjectURL(data);
-                        })
-                        .catch(() => {
-                            this.error = true;
-                        })
-                        .finally(() => {
-                            this.loaded = true;
-                        });
+                this.observer = new IntersectionObserver(
+                    entries => {
+                        if (entries.some(entry => entry.isIntersecting)) {
+                            this.disconnect();
+                            this.visible = true;
+                            this.load();
+                        }
+                    },
+                    { rootMargin: '0px 30% 30% 0px' },
+                );
+                this.observer.observe(this.$el);
+            },
+            disconnect() {
+                if (this.observer) {
+                    this.observer.disconnect();
+                    this.observer = null;
                 }
             },
             handleError() {
+                // the page may stay open longer than the URL lifetime: get a fresh URL once
+                if (this.resolver && !this.retried && isUrlExpired(this.url)) {
+                    this.retried = true;
+                    this.load();
+                    return;
+                }
+
                 this.error = true;
             },
         },
         mounted() {
-            this.load();
+            if (this.lazy) {
+                this.observe();
+            } else {
+                this.load();
+            }
         },
         beforeDestroy() {
-            if (this.url) {
-                URL.revokeObjectURL(this.url);
-                this.url = null;
-            }
+            this.disconnect();
         },
         watch: {
             src() {
-                this.error = false;
-                this.load();
+                this.reload();
+            },
+            resolver() {
+                this.reload();
             },
         },
     };
 </script>
 
 <style lang="scss" scoped>
+    // Proportions of a screenshot thumbnail (280 px wide), as in the error placeholder below
+    .app-image__placeholder {
+        aspect-ratio: 280 / 162;
+        line-height: 0;
+    }
+
     img {
         width: 100%;
         object-fit: cover;
@@ -142,6 +191,7 @@
     }
 
     .fade-enter,
+    .fade-enter-from,
     .fade-leave-to {
         opacity: 0;
     }

@@ -26,7 +26,7 @@
     import ProjectService from '@/services/resource/project.service';
     import TeamAvatars from '@/components/TeamAvatars';
     import i18n from '@/i18n';
-    import debounce from 'lodash.debounce';
+    import debounce from 'lodash/debounce';
 
     const service = new ProjectService();
 
@@ -262,20 +262,7 @@
         .at-container {
             margin-bottom: 1rem;
             .table {
-                &::v-deep .at-table {
-                    &__cell {
-                        width: 100%;
-                        overflow-x: hidden;
-                        padding-top: $spacing-05;
-                        padding-bottom: $spacing-05;
-                        border-bottom: 2px solid $blue-3;
-                        position: relative;
-                        z-index: 0;
-                        &:last-child {
-                            max-width: unset;
-                        }
-                    }
-
+                & :deep(.at-table) {
                     .actions-column {
                         display: flex;
                         flex-flow: row nowrap;
@@ -283,6 +270,18 @@
 
                     .action-button {
                         margin-right: 1em;
+                    }
+                }
+                & :deep(.at-table__cell) {
+                    width: 100%;
+                    overflow-x: hidden;
+                    padding-top: $spacing-05;
+                    padding-bottom: $spacing-05;
+                    border-bottom: 2px solid $blue-3;
+                    position: relative;
+                    z-index: 0;
+                    &:last-child {
+                        max-width: unset;
                     }
                 }
             }

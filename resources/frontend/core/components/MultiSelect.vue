@@ -75,6 +75,7 @@
                 this.options.push(...all);
                 this.$emit('onOptionsLoad', this.options);
             } catch ({ response }) {
+                this.$emit('onOptionsLoadError');
                 if (process.env.NODE_ENV === 'development') {
                     console.warn(response ? response : 'request to projects is canceled');
                 }
@@ -183,7 +184,11 @@
                 return this.model.length;
             },
             allOptionsSelected() {
-                return this.options.length > 0 && this.options.length === this.selectionAmount;
+                return (
+                    this.options.length > 0 &&
+                    this.options.length === this.selectionAmount &&
+                    this.options.every(({ id }) => this.model.includes(id))
+                );
             },
             placeholderText() {
                 const i18nKey = this.placeholder + (this.allOptionsSelected ? '_all' : '');
@@ -222,38 +227,29 @@
         }
     }
 
-    ::v-deep {
-        .at-select {
-            &__placeholder {
-                color: #3f536d;
-                padding: 10px 12px;
-            }
+    :deep(.at-select__placeholder) {
+        color: #3f536d;
+        padding: 10px 12px;
+    }
+    :deep(.at-select__input) {
+        height: 100%;
+        z-index: 2;
+    }
+    :deep(.at-select__selection) {
+        border-radius: 5px;
+        color: black;
+    }
+    :deep(.at-select--visible + .at-select__placeholder) {
+        display: none;
+    }
+    :deep(.at-select__clear) {
+        z-index: 3;
+    }
+    :deep(.at-select__arrow) {
+        z-index: 3;
+    }
 
-            &__input {
-                height: 100%;
-                z-index: 2;
-            }
-
-            &__selection {
-                border-radius: 5px;
-                color: black;
-            }
-
-            &--visible + .at-select__placeholder {
-                display: none;
-            }
-
-            &__clear {
-                z-index: 3;
-            }
-
-            &__arrow {
-                z-index: 3;
-            }
-        }
-
-        .at-tag {
-            display: none;
-        }
+    :deep(.at-tag) {
+        display: none;
     }
 </style>

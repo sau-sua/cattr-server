@@ -1,9 +1,13 @@
 apiVersion: v2
-name: cattr-server
+name: server
 description: Cattr is an open-source time-tracking solution for teams
 type: application
-version: 0.1.0
-appVersion: "latest"
+# Placeholders: the helm-release workflow sets the real values at package time.
+# version comes from the helm/vX.Y.Z tag, appVersion is the highest stable
+# application release (see ci/release-metadata.sh).
+version: 0.0.0
+appVersion: "0.0.0"
+kubeVersion: ">=1.27.0-0"
 keywords:
   - cattr
   - time-tracking
@@ -11,6 +15,22 @@ keywords:
   - management
   - laravel
 home: https://cattr.app
+icon: https://raw.githubusercontent.com/cattr-app/server-application/main/public/images/logo.svg
+maintainers:
+  - name: Alex
+    email: inbox@alexv-pro.ru
+  - name: Cattr Team
+    email: hi@cattr.app
 sources:
   - https://github.com/cattr-app/server-application
-  - https://git.amazingcat.net/cattr/core/app
+annotations:
+  artifacthub.io/license: SSPL-1.0
+  # The tag is replaced with appVersion when the chart is packaged.
+  artifacthub.io/images: |
+    - name: cattr
+      image: ghcr.io/cattr-app/server:0.0.0
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://cattr.app/manual
+    - name: Source
+      url: https://github.com/cattr-app/server-application

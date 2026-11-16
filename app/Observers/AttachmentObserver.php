@@ -21,7 +21,7 @@ class AttachmentObserver
             $this->service->attach($parent, $requestData['attachmentsRelation']);
         }
         if (isset($requestData['attachmentsToRemove']) && count($requestData['attachmentsToRemove']) > 0) {
-            $this->service->deleteAttachments($requestData['attachmentsToRemove']);
+            $this->service->deleteAttachments($requestData['attachmentsToRemove'], $parent, auth()->id());
         }
     }
 
@@ -34,7 +34,7 @@ class AttachmentObserver
             $this->service->attach($parent, $requestData['attachmentsRelation']);
         }
         if (isset($requestData['attachmentsToRemove']) && count($requestData['attachmentsToRemove']) > 0) {
-            $this->service->deleteAttachments($requestData['attachmentsToRemove']);
+            $this->service->deleteAttachments($requestData['attachmentsToRemove'], $parent, auth()->id());
         }
     }
 
@@ -50,7 +50,7 @@ class AttachmentObserver
 
     public function attachmentCreated(Attachment $attachment, array $requestData): void
     {
-        if ($this->service->storeFile($requestData['attachment'], $attachment) === false){
+        if ($this->service->storeFile($requestData['attachment'], $attachment) === false) {
 //          TODO: throw exception or abort_if?
         }
     }
@@ -66,5 +66,4 @@ class AttachmentObserver
             parentDeleted: [[__CLASS__, 'parentDeleted']],
         ));
     }
-
 }

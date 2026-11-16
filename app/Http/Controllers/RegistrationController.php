@@ -3,10 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ScreenshotsState;
+use App\Http\Requests\Auth\RegistrationRequest;
 use App\Models\Invitation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Settings;
 
 /**
@@ -16,38 +16,14 @@ use Settings;
 class RegistrationController extends Controller
 {
     /**
-     * @param $key
-     * @return JsonResponse
-     * @api             {get} /auth/register/{key} Get Form
-     * @apiDescription  Returns invitation form data by a invitation token
+     * Get Form
      *
-     * @apiVersion      1.0.0
-     * @apiName         GetRegistration
-     * @apiGroup        Invitation
-     *
-     * @apiParam (Parameters from url) {String}  key  User invitation key
-     *
-     * @apiSuccess {String}   email    UserInvited email
-     *
-     * @apiSuccessExample {json} Response Example
-     *  HTTP/1.1 200 OK
-     *  {
-     *    "email": "test@example.com"
-     *  }
-     *
-     * @apiErrorExample {json} Email not found
-     *  HTTP/1.1 404 Not found
-     *  {
-     *    "error": "Not found"
-     *  }
-     *
-     * @apiUse          400Error
-     *
+     * Returns invitation form data by a invitation token
      */
     public function getForm($key): JsonResponse
     {
         $invitation = Invitation::where('key', $key)
-            ->where('expires_at', '>=', time())
+            ->where('expires_at', '>=', now())
             ->first();
 
         if (!isset($invitation)) {
@@ -62,56 +38,14 @@ class RegistrationController extends Controller
     /**
      * Creates a new user.
      *
-     * @param Request $request
+     * @param RegistrationRequest $request
      * @param string $key
      * @return JsonResponse
-     * @api             {post} /auth/register/{key} Post Form
-     * @apiDescription  Registers user by key
-     *
-     * @apiVersion      1.0.0
-     * @apiName         PostRegistration
-     * @apiGroup        Invitation
-     *
-     * @apiParam (Parameters from url) {String}  key  User invitation key
-     *
-     * @apiParam {String}  email     New user email
-     * @apiParam {String}  password  New user password
-     * @apiParam {String}  fullName  New user name
-     *
-     * @apiParamExample {json} Request Example
-     *  {
-     *    "email": "johndoe@example.com",
-     *    "password": "amazingpassword",
-     *    "fullName": "John Doe"
-     *  }
-     *
-     * @apiSuccess {Number}   user_id  New user ID
-     *
-     * @apiSuccessExample {json} Response Example
-     *  HTTP/1.1 200 OK
-     *  {
-     *    "user_id": 2
-     *  }
-     *
-     * @apiErrorExample {json} Email not found
-     *  HTTP/1.1 404 Not found
-     *  {
-     *    "message": "The specified key has expired or does not exist"
-     *  }
-     *
-     * @apiErrorExample {json} Email mismatch
-     *  HTTP/1.1 400 Bad request
-     *  {
-     *    "message": "The email address does not match the key"
-     *  }
-     *
-     * @apiUse          400Error
-     *
      */
-    public function postForm(Request $request, string $key): JsonResponse
+    public function postForm(RegistrationRequest $request, string $key): JsonResponse
     {
         $invitation = Invitation::where('key', $key)
-            ->where('expires_at', '>=', time())
+            ->where('expires_at', '>=', now())
             ->first();
 
         if (!isset($invitation)) {

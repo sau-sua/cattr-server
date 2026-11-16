@@ -457,6 +457,20 @@ jobs:
         with:
           persist-credentials: false
 
+      # The base images come from this repository's own GHCR namespace, where
+      # a package stays private until its visibility is changed, so pulling
+      # them needs the same credentials as the push below.
+      - name: Authenticate to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${GHCR_TOKEN}" |
+            buildah login ghcr.io \
+              --username "${GITHUB_ACTOR}" \
+              --password-stdin
+
       - name: Build Cattr server
         id: build
         uses: redhat-actions/buildah-build@719e3c40d8af9790c23eca13f7daa339f2867034  # v3.1.0

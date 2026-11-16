@@ -5,6 +5,15 @@ on:
     tags:
       - 'v*'
 
+  # Manual run from the Actions tab, for publishing an image without pushing
+  # a Git tag first. The given version is used exactly like a tag name.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Image tag to publish, starting with "v" (for example v6.0.0)'
+        required: true
+        type: string
+
 permissions:
   contents: read
   packages: write
@@ -16,10 +25,15 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REGISTRY_NAMESPACE: ghcr.io/cattr-app
+  # Images are published to the GHCR namespace of whoever owns the repository
+  # running this workflow, so a fork publishes under its own account and never
+  # needs write access to another namespace. GHCR requires a lowercase
+  # namespace: replace the expression with a literal if the owner login
+  # contains uppercase characters.
+  REGISTRY_NAMESPACE: ghcr.io/${{ github.repository_owner }}
 
   APP_IMAGE: server
-  RUNTIME_IMAGE: ghcr.io/cattr-app/server-runtime
+  RUNTIME_IMAGE: ghcr.io/${{ github.repository_owner }}/server-runtime
 
   RUNTIME_CONFIG: build/base/runtime/apko.yaml
   BUILDER_CONFIG: build/base/builder/apko.yaml
@@ -38,7 +52,10 @@ env:
   #
   # org.opencontainers.image.* keys are OCI annotations. apko also mirrors
   # them into image config labels for compatibility with label-based tooling.
-  OCI_SOURCE: https://github.com/cattr-app/server-application
+  #
+  # The source points at the repository that built the image, which is also
+  # what links the published package to that repository on GitHub.
+  OCI_SOURCE: ${{ github.server_url }}/${{ github.repository }}
   OCI_VENDOR: Cattr
 
   SERVER_DESCRIPTION: >-
@@ -496,19 +513,26 @@ jobs:
       - name: Prepare release metadata
         id: release
         shell: bash
+        env:
+          # Tag pushes release the tag itself. Manual runs have no tag, so
+          # they release the version typed into the workflow_dispatch form.
+          RELEASE_TAG: ${{ inputs.version || github.ref_name }}
         run: |
           set -euo pipefail
 
-          version="${GITHUB_REF_NAME#v}"
-
-          if [[ -z "${version}" ]]; then
-            echo "::error::Unable to determine application version"
+          # The value becomes an image tag, and on manual runs it is free-form
+          # user input, so accept only what a container tag may contain.
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9A-Za-z][0-9A-Za-z._-]{0,126}$ ]]; then
+            echo "::error::Release tag must start with \"v\" and be a valid image tag: ${RELEASE_TAG}"
             exit 1
           fi
 
+          version="${RELEASE_TAG#v}"
+
+          echo "tag=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
-          echo "Release tag: ${GITHUB_REF_NAME}"
+          echo "Release tag: ${RELEASE_TAG}"
           echo "Application version: ${version}"
 
       - name: Build Cattr server
@@ -523,7 +547,7 @@ jobs:
           image: ${{ env.APP_IMAGE }}
 
           tags: |
-            ${{ github.ref_name }}
+            ${{ steps.release.outputs.tag }}
             latest
 
           # Cattr images are intentionally linux/amd64 only.
